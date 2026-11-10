@@ -11,7 +11,7 @@ export default function Footer() {
   const contacts = [
     {
       name: 'GitHub',
-      href: 'https://github.com/shlelisa',
+      href: 'https://github.com/shBikat',
       icon: (
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
           <path
@@ -21,12 +21,12 @@ export default function Footer() {
           />
         </svg>
       ),
-      label: 'github.com/shlelisa',
+      label: 'github.com/shBikat',
       color: 'hover:text-gray-900 dark:hover:text-white hover:border-gray-400 dark:hover:border-zinc-500',
     },
     {
       name: 'Portfolio',
-      href: 'https://lelisa1.vercel.app',
+      href: 'https://Bikat1.vercel.app',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path
@@ -41,7 +41,7 @@ export default function Footer() {
     },
     {
       name: 'LinkedIn',
-      href: 'https://www.linkedin.com/in/lelisa-shashura-4935a2259/',
+      href: 'https://www.linkedin.com/in/Bikat-shashura-4935a2259/',
       icon: (
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
           <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
@@ -52,7 +52,7 @@ export default function Footer() {
     },
     {
       name: 'Email',
-      href: 'mailto:lelisashashura@gmail.com',
+      href: 'mailto:Bikatshashura@gmail.com',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path
@@ -62,7 +62,7 @@ export default function Footer() {
           />
         </svg>
       ),
-      label: 'lelisashashura@gmail.com',
+      label: 'Bikatshashura@gmail.com',
       color: 'hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-400 dark:hover:border-emerald-500',
     },
   ];
@@ -118,40 +118,11 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Column 3: Contact & Developer Profiles (4 cols) */}
-          <div className="md:col-span-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-zinc-200">
-                Contact Us
-              </h4>
-              <span className="text-[11px] text-gray-400 dark:text-zinc-500">Lelisa</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-2 pt-1">
-              {contacts.map((c) => (
-                <a
-                  key={c.name}
-                  href={c.href}
-                  target={c.href.startsWith('mailto:') ? undefined : '_blank'}
-                  rel={c.href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-800/40 text-gray-700 dark:text-zinc-300 text-xs font-semibold transition-all hover:shadow-xs group ${c.color}`}
-                >
-                  <span className="shrink-0 transition-transform group-hover:scale-110">{c.icon}</span>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[10px] text-gray-400 dark:text-zinc-500 uppercase tracking-wider font-bold">
-                      {c.name}
-                    </span>
-                    <span className="text-xs truncate">{c.label}</span>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Bottom Bar */}
         <div className="mt-10 pt-6 border-t border-gray-100 dark:border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-400 dark:text-zinc-500">
-          <p>© {new Date().getFullYear()} Developed By Lelisa Shashura</p>
+          <p>© {new Date().getFullYear()} Developed By Bikat Shashura</p>
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-[11px] font-medium text-gray-600 dark:text-zinc-400">
               🌍 English · Afaan Oromoo · አማርኛ

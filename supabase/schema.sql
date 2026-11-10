@@ -1,5 +1,5 @@
 -- ==============================================================================
--- LelisaCV Builder - Supabase Database Schema & Row Level Security (RLS)
+-- Bikat Resume - Supabase Database Schema & Row Level Security (RLS)
 -- Copy and paste this script into your Supabase SQL Editor: https://supabase.com/dashboard/project/_/sql
 -- ==============================================================================
 

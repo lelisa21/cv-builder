@@ -3,13 +3,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f3f4f6;
-  --foreground: #171717;
+  --background: #f7f7f7;
+  --foreground: #111111;
+  --accent: #b45309;           /* Deep Amber Gold */
+  --accent-secondary: #e65c00; /* Burned Orange */
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #000000;
+  --foreground: #f5f5f5;
+  --accent: #f59e0b;           /* Bright Amber */
+  --accent-secondary: #f97316; /* Electric Orange */
 }
 
 @theme inline {
