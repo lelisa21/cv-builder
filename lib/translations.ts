@@ -382,7 +382,7 @@ const en = {
       badge: 'A BikatTech product',
       heroTitle: 'A CV that moves you forward.',
       heroSubtitle:
-        'CV Studio is BikatTech’s AI-powered CV and career development platform: write in a live editor, keep drafts on this device, sync when you sign in, and export print-ready documents.',
+        'CV Studio is BikatTech’s AI-powered CV and career development platform: that fully support English, Amharic and Afaan Oromoo. write in a live editor, keep drafts on this device, sync when you sign in, and export print-ready documents.',
       ctaPrimary: 'Start in the studio',
       ctaSecondary: 'Browse templates',
       proof1Title: 'Local-first',
@@ -402,7 +402,7 @@ const en = {
       archTitle: 'A hybrid architecture, on purpose.',
       archSubtitle:
         'The editor stays fast and private on your machine. The cloud is there when you want accounts and backups. Documents are generated as real files — not screenshots of a webpage.',
-      archCardTitle: 'Recommended architecture',
+      archCardTitle: 'Architecture',
       archFrontend: 'CV Builder Frontend',
       archFrontendDesc: 'Editor · Live Preview · Customization · Templates',
       archLocal: 'IndexedDB',
@@ -516,17 +516,17 @@ const en = {
         'CV Studio iddoo hojii ogummaa keessaa BikatTech keessatti: CV barreessi, beeksisa hojii wajjin madaali, sanada erguu dandeessu baasi.',
       companyBlurb:
         'BikatTech dhaabbata teeknoolojii oomisha hedduu qaba. CV Studio tokko isaan keessaa — dhaabbanni ofii miti.',
-      ecosystemLine: 'CV Studio oomisha BikatTech ti.',
+      ecosystemLine: 'CV Studio  BikatTech n kan Hojjatame.',
     },
     common: {
       next: 'Itti aan',
-      back: 'Duuba deebi',
+      back: "Duubatti deebi'i",
       preview: 'Mul\u2019isi',
       remove: 'Haqi',
       add: 'Ida\'i',
-      loading: 'Hojii jira...',
-      generate: 'Uumi',
-      save: 'Kayeessi',
+      loading: 'Hojiirra jira...',
+      generate: 'Hojjadhu',
+      save: 'Olkaa\u2019i',
       cancel: 'Haqi',
       search: 'Barbaadi',
     },
@@ -822,7 +822,7 @@ const en = {
     templates: {
       title: 'Ijaarsa CV Algaabsaa',
       subtitle:
-        'Addaasaa fakkii CV ykn PDF kuusaa. AI keenya saxaxa qoranna, kutaa argama fi barbaachisoota adda baasu, ittiin gfii godhu.',
+        'PDF ykn Teempileetiitawwan CV qabdu asirra Godhi. AI keenya saxaxa qoranna, kutaa argama fi barbaachisoota adda baasu, ittiin gfii godhu.',
       dragDrop: 'Addaasaa keessan armaan godhi',
       fileTypes: 'PNG, JPG, WebP, GIF fi PDF (10 MB hangii) deeggara',
       analyzing: 'Addaasaa keessan qoranna...',
@@ -880,7 +880,7 @@ const en = {
     },
     home: {
       badge: 'Oomisha BikatTech',
-      heroTitle: 'CV si fuuldura geessu.',
+      heroTitle: 'CV fuulduratti si geessu.',
       heroSubtitle:
         'CV Studio waltajjii CV fi guddina ogummaa AI BikatTech ti: barreessaa, fuula A4 yeroo dhugaa ilaalaa, kuusaa meeshaa irratti tursaa, yeroo barbaaddan immoo duwwaatti wal-qunnamsiisaa.',
       ctaPrimary: 'Istuudiyoo keessatti jalqabi',

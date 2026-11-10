@@ -16,7 +16,7 @@ export function TemplatePreview({ design }: { design: DesignConfig }) {
   const { layout, color, type } = design;
   const twoColumn = layout.columns !== 'single';
   const asideLeft = layout.columns === 'aside-left';
-  const name = type.nameCase === 'upper' ? 'AMARA BEKELE' : 'Amara Bekele';
+  const name = type.nameCase === 'upper' ? 'Abeba Kebede' : 'Abeba Kebede';
 
   const Aside = (
     <span className="tpl-aside" style={{ background: color.aside, color: color.asideInk }}>
@@ -73,7 +73,7 @@ export function TemplatePreview({ design }: { design: DesignConfig }) {
           <span className="tpl-headline">Product Designer · Design Systems</span>
         </span>
         <span className="tpl-contact">
-          <span>amara@bekele.design</span>
+          <span>abeba@bekele.design</span>
           <span>Addis Ababa · Remote</span>
           <span>bekele.design</span>
         </span>

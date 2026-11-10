@@ -172,7 +172,6 @@ export default function JobAnalyzer() {
           <div className="ja-kicker">
             <p className="ja-kicker-product">{t.brand.product}</p>
             <span className="ja-kicker-dot" aria-hidden />
-            <p className="ja-kicker-company">{t.brand.byline}</p>
           </div>
           <h1 className="ja-h1 mt-4 text-[clamp(36px,5.4vw,64px)]">{tj.title}</h1>
           <p className="ja-lead mt-5">{tj.subtitle}</p>

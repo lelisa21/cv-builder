@@ -109,20 +109,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
           </p>
         </div>
 
-        {/* Configuration Notice if Supabase keys missing */}
-        {!isConfigured && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
-            <p className="font-bold flex items-center gap-1.5">
-              <span>ℹ️</span>
-              <span>Supabase Connection Ready</span>
-            </p>
-            <p className="text-[11px] leading-relaxed">
-              Add <code className="bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 rounded font-mono">NEXT_PUBLIC_SUPABASE_URL</code> &amp;{' '}
-              <code className="bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 rounded font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable cloud authentication. Local profile storage is active.
-            </p>
-          </div>
-        )}
-
         {/* Mode Selector Tabs */}
         <div className="flex p-1 bg-gray-100 dark:bg-zinc-800 rounded-xl">
           <button

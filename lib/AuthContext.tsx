@@ -370,7 +370,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sign In with Email & Password
   const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
     if (!supabase) {
-      return { error: 'Supabase is not configured yet. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment.' };
+      return { error: 'there is server issue will fix soon!' };
     }
 
     try {
@@ -389,7 +389,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fullName: string
   ): Promise<{ error: string | null; needsEmailConfirmation?: boolean }> => {
     if (!supabase) {
-      return { error: 'Supabase is not configured yet. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment.' };
+      return { error: 'there is server issue will fix soon!' };
     }
 
     try {

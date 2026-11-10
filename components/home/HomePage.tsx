@@ -91,7 +91,6 @@ export default function HomePage() {
       <section className="home-hero">
         <div className="home-wrap home-hero-grid">
           <div className="home-hero-copy">
-            <p className="home-eyebrow">{h.badge}</p>
             <h1 className="home-h1 mt-4 text-[clamp(40px,6.2vw,72px)]">{h.heroTitle}</h1>
             <p className="home-lead mt-5 text-[17px] max-w-[34rem]">{h.heroSubtitle}</p>
             <div className="home-hero-actions">
@@ -123,13 +122,13 @@ export default function HomePage() {
               <div className="cv-mini" aria-hidden>
                 <div className="cv-mini-top">
                   <div>
-                    <div className="cv-mini-name">Amira Bekele</div>
+                    <div className="cv-mini-name">Abeba Kebede</div>
                     <div className="cv-mini-role">Product designer</div>
                   </div>
                   <div className="cv-mini-meta">
                     Addis Ababa
                     <br />
-                    amira@studio.dev
+                    abeba@bikattech.com
                     <br />
                     +251 90 000 0000
                   </div>
@@ -181,7 +180,6 @@ export default function HomePage() {
       <section className="home-section pt-0">
         <div className="home-wrap">
           <div className="home-section-head">
-            <p className="home-eyebrow">{h.archEyebrow}</p>
             <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.archTitle}</h2>
             <p className="home-lead mt-3 text-[16px]">{h.archSubtitle}</p>
           </div>
@@ -225,7 +223,6 @@ export default function HomePage() {
       <section className="home-section">
         <div className="home-wrap">
           <div className="home-section-head">
-            <p className="home-eyebrow">{h.howEyebrow}</p>
             <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.howTitle}</h2>
           </div>
           <div className="steps">
@@ -251,7 +248,6 @@ export default function HomePage() {
       <section className="home-section">
         <div className="home-wrap">
           <div className="home-section-head">
-            <p className="home-eyebrow">{h.featuresEyebrow}</p>
             <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.featuresTitle}</h2>
             <p className="home-lead mt-3 text-[16px]">{h.featuresSubtitle}</p>
           </div>
@@ -288,7 +284,6 @@ export default function HomePage() {
         <div className="home-wrap">
           <div className="home-section-head flex flex-col md:flex-row md:items-end md:justify-between gap-4 max-w-none">
             <div className="max-w-xl">
-              <p className="home-eyebrow">{h.templatesEyebrow}</p>
               <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.templatesTitle}</h2>
               <p className="home-lead mt-3 text-[16px]">{h.templatesSubtitle}</p>
             </div>
@@ -324,7 +319,6 @@ export default function HomePage() {
       <section className="home-section">
         <div className="home-wrap">
           <div className="home-section-head center">
-            <p className="home-eyebrow">{h.trustEyebrow}</p>
             <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.trustTitle}</h2>
           </div>
           <div className="trust-grid">

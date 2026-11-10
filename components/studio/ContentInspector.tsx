@@ -63,7 +63,7 @@ function BasicsEditor() {
           className="studio-input"
           value={doc.basics.name}
           onChange={(event) => updateBasics({ name: event.target.value })}
-          placeholder="Amara Bekele"
+          placeholder="Abeba Kebede"
         />
       </Field>
 

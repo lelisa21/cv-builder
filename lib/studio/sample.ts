@@ -94,7 +94,7 @@ export function sampleSections(): ResumeSection[] {
           title: 'Ledger — open-source finance UI',
           subtitle: 'Independent',
           period: '2024',
-          link: 'github.com/amarab/ledger-ui',
+          link: 'github.com/abebab/ledger-ui',
           description:
             'A composable React library for financial dashboards, built around accessible data visualisation.',
           bullets: [
@@ -215,16 +215,16 @@ export function createSampleDocument(templateId = 'atelier'): ResumeDocument {
   return {
     version: 1,
     id: 'studio-sample',
-    title: 'Amara Bekele — Product Designer',
+    title: 'Abeba Kebede — Product Designer',
     updatedAt: new Date().toISOString(),
     basics: {
-      name: 'Amara Bekele',
+      name: 'Abeba Kebede',
       headline: 'Product Designer · Design Systems',
-      email: 'amara@bekele.design',
+      email: 'abeba@bekele.design',
       phone: '+251 91 234 5678',
       location: 'Addis Ababa · Remote',
       website: 'bekele.design',
-      linkedin: 'linkedin.com/in/amarabekele',
+      linkedin: 'linkedin.com/in/abebabekele',
       photo: '',
       availability: 'Open to senior product design roles',
     },
