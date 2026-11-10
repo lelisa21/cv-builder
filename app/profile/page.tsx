@@ -323,7 +323,7 @@ export default function ProfilePage() {
                   type="text"
                   value={formData.fullName || ''}
                   onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                  placeholder="e.g. Bikat Bekele"
+                  placeholder="e.g. BikatTech Bekele"
                   className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-xl bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>

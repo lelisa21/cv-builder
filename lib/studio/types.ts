@@ -1,5 +1,5 @@
 /**
- * Bikat Studio — canonical document model.
+ * BikatTech Studio — canonical document model.
  *
  * A resume is intentionally data-first: the renderer, paginator, quality
  * engine and exporters all read from this single model. Templates are design

@@ -11,24 +11,20 @@ export default function Icon() {
     (
       <div
         style={{
-          fontSize: 16,
-          background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%)',
+          fontSize: 18,
+          background: '#0c3b74',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: 'white',
-          borderRadius: 8,
-          fontWeight: 900,
+          fontWeight: 800,
           letterSpacing: '-0.5px',
-          fontFamily: 'sans-serif',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          fontFamily: 'Georgia, serif',
         }}
       >
-        <span style={{ color: '#ffffff' }}>L</span>
-        <span style={{ color: '#e0e7ff', fontSize: 13, marginRight: 1 }}>c</span>
-        <span style={{ color: '#38bdf8' }}>V</span>
+        B
       </div>
     ),
     {

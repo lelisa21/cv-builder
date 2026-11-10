@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import Studio from '@/components/studio/Studio';
 
 export const metadata: Metadata = {
-  title: 'Lelisa Studio — The CV atelier',
+  title: 'Editor',
   description:
-    'Compose, design and export a considered CV in one calm workspace. Deep typography, flexible sections and live pagination.',
+    'Compose, design and export a considered CV in CV Studio by BikatTech. Deep typography, flexible sections and live pagination.',
 };
 
 export default function BuilderPage() {

@@ -91,8 +91,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_PROFILE_KEY = 'Bikatcv_local_user_profile';
-const LOCAL_SAVED_CVS_KEY = 'Bikatcv_local_saved_cvs';
+const LOCAL_PROFILE_KEY = 'BikatTechcv_local_user_profile';
+const LOCAL_SAVED_CVS_KEY = 'BikatTechcv_local_saved_cvs';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

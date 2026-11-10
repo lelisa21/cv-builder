@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Icon } from './Icon';
 import { ExportMenu } from './ExportMenu';
 import { useStudio } from './StudioProvider';
@@ -45,9 +46,12 @@ export function StudioTopbar() {
 
   return (
     <header className="studio-topbar">
-      <Link href="/" className="studio-brand" aria-label="Lelisa home">
-        <span className="studio-brand-name">Lelisa</span>
-        <span className="studio-brand-tag">Studio</span>
+      <Link href="/" className="studio-brand" aria-label="CV Studio by BikatTech">
+        <Image src="/logo.png" alt="" width={28} height={28} className="studio-brand-mark" />
+        <span className="studio-brand-copy">
+          <span className="studio-brand-name">CV Studio</span>
+          <span className="studio-brand-tag">BikatTech</span>
+        </span>
       </Link>
 
       <span className="studio-topbar-divider" />

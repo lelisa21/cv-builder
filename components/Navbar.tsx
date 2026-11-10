@@ -15,6 +15,7 @@ const Navbar: React.FC = () => {
   const { user, profile, signOut } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   const links = [
@@ -31,7 +32,6 @@ const Navbar: React.FC = () => {
     { code: 'am', label: 'አማርኛ', natives: 'አማ' },
   ];
 
-  // Close user dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -46,7 +46,10 @@ const Navbar: React.FC = () => {
     };
   }, [userMenuOpen]);
 
-  // Derive user display name
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const displayName =
     profile?.fullName?.trim() ||
     user?.user_metadata?.full_name ||
@@ -61,103 +64,72 @@ const Navbar: React.FC = () => {
     await signOut();
   };
 
+  const linkClass = (href: string) =>
+    `px-3 py-2 rounded-full text-[13.5px] font-medium transition-colors ${
+      pathname === href
+        ? 'bg-[var(--brand-soft)] text-[var(--brand)]'
+        : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--brand-mist)] dark:hover:text-zinc-100'
+    }`;
+
   return (
     <>
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
-      <nav className="border-b sticky top-0 z-50 bg-white/95 backdrop-blur dark:bg-zinc-900/95 border-gray-200 dark:border-zinc-800">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <Logo size="md" showBadge={true} asLink={true} />
+      <nav className="sticky top-0 z-50 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--paper)_88%,transparent)] backdrop-blur-md">
+        <div className="max-w-[1120px] mx-auto px-5">
+          <div className="flex items-center justify-between h-[68px]">
+            <Logo size="md" showBadge={false} asLink={true} />
 
-            <div className="flex items-center gap-2 md:gap-3">
-              <div className="hidden md:flex gap-1">
-                {links.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${pathname === link.href
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-bold'
-                        : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                      }`}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </div>
+            <div className="hidden lg:flex items-center gap-0.5">
+              {links.map((link) => (
+                <Link key={link.href} href={link.href} className={linkClass(link.href)}>
+                  {link.label}
+                </Link>
+              ))}
+            </div>
 
-              {/* User Auth: User Name Dropdown or Sign In Button */}
+            <div className="flex items-center gap-2">
               {user ? (
                 <div className="relative" ref={userMenuRef}>
                   <button
                     type="button"
                     onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all shadow-xs cursor-pointer"
+                    className="flex items-center gap-2 px-2 py-1 rounded-full border border-[var(--line)] bg-white dark:bg-zinc-900 text-[var(--ink)] text-xs font-semibold hover:border-[var(--brand)]/30 transition-all cursor-pointer"
                     aria-expanded={userMenuOpen}
                     aria-label="User account menu"
                   >
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-extrabold shadow-xs">
+                    <span className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-[10px] font-bold">
                       {userInitial}
                     </span>
-                    <span className="max-w-[110px] sm:max-w-[140px] truncate text-xs">
-                      {displayName}
-                    </span>
-                    <span className="text-[9px] text-blue-500 dark:text-blue-400 transition-transform duration-200">
-                      {userMenuOpen ? '▲' : '▼'}
-                    </span>
+                    <span className="hidden sm:inline max-w-[110px] truncate">{displayName}</span>
                   </button>
 
-                  {/* Dropdown Menu Overlay */}
                   {userMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                      {/* User Info Header */}
-                      <div className="px-4 py-2.5 border-b border-gray-100 dark:border-zinc-800">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                            {userInitial}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-gray-900 dark:text-zinc-100 truncate">
-                              {displayName}
-                            </p>
-                            <p className="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
-                              {user.email}
-                            </p>
-                          </div>
-                        </div>
+                    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-[var(--line)] py-2 z-50">
+                      <div className="px-4 py-2.5 border-b border-[var(--line)]">
+                        <p className="text-xs font-bold text-[var(--ink)] truncate">{displayName}</p>
+                        <p className="text-[11px] text-[var(--muted)] truncate">{user.email}</p>
                       </div>
-
-                      {/* Menu Links */}
-                      <div className="py-1">
-                        <Link
-                          href="/profile"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800/80 transition-colors"
-                        >
-                          <span className="text-sm">👤</span>
-                          <span>Profile</span>
-                        </Link>
-
-                        <Link
-                          href="/profile#saved-cvs"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800/80 transition-colors"
-                        >
-                          <span className="text-sm">📂</span>
-                          <span>My Saved CVs</span>
-                        </Link>
-                      </div>
-
-                      {/* Log Out */}
-                      <div className="pt-1 border-t border-gray-100 dark:border-zinc-800">
-                        <button
-                          type="button"
-                          onClick={handleSignOut}
-                          className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors text-left cursor-pointer"
-                        >
-                          <span className="text-sm">🚪</span>
-                          <span>Logout</span>
-                        </button>
-                      </div>
+                      <Link
+                        href="/profile"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="block px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--brand-mist)]"
+                      >
+                        Profile
+                      </Link>
+                      <Link
+                        href="/profile#saved-cvs"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="block px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--brand-mist)]"
+                      >
+                        Saved CVs
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full text-left px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer"
+                      >
+                        Log out
+                      </button>
                     </div>
                   )}
                 </div>
@@ -165,60 +137,84 @@ const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setAuthModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-[var(--line)] text-[13px] font-semibold text-[var(--ink)] hover:border-[var(--brand)]/30 cursor-pointer"
                 >
-                  <span>🔐</span>
-                  <span className="hidden sm:inline">Sign In</span>
+                  Sign in
                 </button>
               )}
 
-              <div className="flex items-center gap-1.5">
-                <select
-                  aria-label="Language"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-                  className="px-2 py-1.5 rounded-md border text-sm bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {languages.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.natives}
-                    </option>
-                  ))}
-                </select>
+              <Link
+                href="/builder"
+                className="hidden md:inline-flex px-3.5 py-1.5 rounded-full bg-[var(--brand)] text-white text-[13px] font-semibold hover:bg-[var(--brand-deep)]"
+              >
+                Open CV Studio
+              </Link>
 
-                <button
-                  onClick={toggleTheme}
-                  aria-label="Toggle theme"
-                  className="p-2 rounded-md border hover:bg-gray-100 dark:hover:bg-zinc-800 border-gray-300 dark:border-zinc-700 transition-colors"
-                >
-                  {theme === 'light' ? (
-                    <svg className="w-4 h-4 text-gray-700 dark:text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                    </svg>
+              <select
+                aria-label="Language"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+                className="px-2 py-1.5 rounded-full border border-[var(--line)] text-xs bg-white dark:bg-zinc-900 text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+              >
+                {languages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.natives}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+                className="p-2 rounded-full border border-[var(--line)] hover:bg-[var(--brand-mist)] transition-colors"
+              >
+                {theme === 'light' ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="lg:hidden p-2 rounded-full border border-[var(--line)]"
+                aria-label="Open menu"
+                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen((v) => !v)}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {mobileOpen ? (
+                    <path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" />
                   ) : (
-                    <svg className="w-4 h-4 text-gray-700 dark:text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
+                    <path strokeLinecap="round" strokeWidth={1.8} d="M4 7h16M4 12h16M4 17h16" />
                   )}
-                </button>
-              </div>
+                </svg>
+              </button>
             </div>
           </div>
 
-          <div className="md:hidden flex gap-1 pb-2 overflow-x-auto">
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${pathname === link.href
-                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-bold'
-                    : 'text-gray-600 dark:text-zinc-300'
-                  }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
+          {mobileOpen && (
+            <div className="lg:hidden pb-4 flex flex-col gap-1">
+              {links.map((link) => (
+                <Link key={link.href} href={link.href} className={linkClass(link.href)}>
+                  {link.label}
+                </Link>
+              ))}
+              {!user && (
+                <button
+                  type="button"
+                  onClick={() => setAuthModalOpen(true)}
+                  className="mt-2 px-3 py-2 rounded-full bg-[var(--brand)] text-white text-sm font-semibold"
+                >
+                  Sign in
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </nav>
     </>
@@ -226,4 +222,3 @@ const Navbar: React.FC = () => {
 };
 
 export default Navbar;
-

@@ -182,7 +182,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Bikat Bekele"
+                placeholder="e.g. BikatTech Bekele"
                 className="w-full px-3.5 py-2.5 text-sm border border-gray-300 dark:border-zinc-700 rounded-xl bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
               />
             </div>

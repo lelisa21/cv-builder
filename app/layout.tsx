@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Script from 'next/script';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+import './home.css';
+import './jobs.css';
 import './studio.css';
 import { AppProvider } from '@/lib/AppContext';
 import { AuthProvider } from '@/lib/AuthContext';
@@ -19,9 +21,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Lelisa Studio — A calmer way to build a CV',
+  title: {
+    default: 'CV Studio by BikatTech',
+    template: '%s · CV Studio',
+  },
   description:
-    'An editorial CV studio with deep typographic control, live pagination, ATS intelligence and beautiful, print-ready documents.',
+    'CV Studio is BikatTech’s AI-powered CV and career development platform: live editor, local autosave, optional cloud sync, job match, and print-ready export.',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

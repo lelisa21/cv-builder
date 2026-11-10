@@ -62,7 +62,7 @@ function StudioShell() {
 
   useEffect(() => {
     const previous = document.title;
-    document.title = doc.title ? `${doc.title} — Lelisa Studio` : 'Lelisa Studio';
+    document.title = doc.title ? `${doc.title} · CV Studio` : 'Editor · CV Studio';
     return () => {
       document.title = previous;
     };
