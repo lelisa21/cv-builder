@@ -1,0 +1,1770 @@
+'use client';
+
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui';
+import { useApp } from '@/lib/AppContext';
+import { aiService } from '@/services/ai';
+import TemplateCVRenderer from '@/components/cv/TemplateCVRenderer';
+import TemplateLayoutEditor from '@/components/cv/TemplateLayoutEditor';
+import { scoreTemplateMatch } from '@/lib/fidelity';
+import { CustomLayout, defaultCustomLayout, validateLayout } from '@/lib/layout-engine';
+import { TemplateAnalysis, TemplateField, TemplatePhotoCrop, TemplateSection, TemplateStyle } from '@/types';
+import { resizeDataUrl } from '@/lib/image-utils';
+import { applySampledColors, extractPalette } from '@/lib/palette';
+import { exportToWord, exportToImage, exportToPdfDownload, exportToPdf } from '@/lib/export-utils';
+import { analyzeWithPuterClient, writeCvWithPuterClient } from '@/lib/puter-ai';
+
+type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'generated';
+
+interface EntryGroup {
+  id: string;
+  values: Record<string, string>;
+}
+
+const BASE_FIELD_CLASS =
+  'w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100';
+
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
+
+const LAYOUT_OPTIONS = ['single-column', 'two-column', 'sidebar-left', 'sidebar-right'];
+const HEADER_OPTIONS = ['centered', 'left-aligned', 'right-aligned'];
+const DIVIDER_OPTIONS = ['line', 'space', 'border'];
+const PRESET_PALETTES = [
+  { name: 'Corporate Navy', primary: '#1e3a8a', sidebar: '#0f172a', header: '#1e3a8a', accent: '#3b82f6' },
+  { name: 'Emerald Modern', primary: '#065f46', sidebar: '#064e3b', header: '#065f46', accent: '#10b981' },
+  { name: 'Charcoal Slate', primary: '#27272a', sidebar: '#27272a', header: '#27272a', accent: '#3b82f6' },
+  { name: 'Cobalt Executive', primary: '#1e40af', sidebar: '#f0f4f8', header: '#1e40af', accent: '#2563eb' },
+  { name: 'Bordeaux Burgundy', primary: '#881337', sidebar: '#4c0519', header: '#881337', accent: '#e11d48' },
+  { name: 'Monochrome ATS', primary: '#09090b', sidebar: '#18181b', header: '#09090b', accent: '#71717a' },
+];
+
+const FONT_OPTIONS = [
+  { id: 'Arial, sans-serif', label: 'Arial', category: 'Standard Office' },
+  { id: 'Calibri, Candara, "Segoe UI", Optima, Arial, sans-serif', label: 'Calibri', category: 'Modern Office' },
+  { id: "'Times New Roman', Times, serif", label: 'Times New Roman', category: 'Classic Formal' },
+  { id: 'Georgia, serif', label: 'Georgia', category: 'Academic Serif' },
+  { id: 'Garamond, Baskerville, "Times New Roman", serif', label: 'Garamond', category: 'Executive Serif' },
+  { id: 'Verdana, Geneva, sans-serif', label: 'Verdana', category: 'Clean Sans' },
+  { id: "'Trebuchet MS', 'Lucida Sans', Arial, sans-serif", label: 'Trebuchet MS', category: 'Contemporary' },
+  { id: "'Courier New', Courier, monospace", label: 'Courier New', category: 'Monospace' },
+  { id: 'Inter, sans-serif', label: 'Inter', category: 'Ultra Clean' },
+  { id: 'Roboto, sans-serif', label: 'Roboto', category: 'Versatile Sans' },
+  { id: 'Outfit, sans-serif', label: 'Outfit', category: 'Geometric Modern' },
+  { id: 'Merriweather, serif', label: 'Merriweather', category: 'Editorial Serif' },
+  { id: "'Playfair Display', serif", label: 'Playfair Display', category: 'Luxury Serif' },
+  { id: 'Montserrat, sans-serif', label: 'Montserrat', category: 'Bold Geometric' },
+  { id: 'Poppins, sans-serif', label: 'Poppins', category: 'Modern Rounded' },
+];
+
+const BULLET_STYLE_OPTIONS = [
+  { id: 'dot', label: 'Dot •' },
+  { id: 'square', label: 'Square ▪' },
+  { id: 'dash', label: 'Dash –' },
+  { id: 'arrow', label: 'Arrow ›' },
+  { id: 'line', label: 'Line —' },
+];
+
+const HEADING_VARIANT_OPTIONS = [
+  { id: 'underline', label: 'Underline Accent' },
+  { id: 'border', label: 'Box Border' },
+  { id: 'filled', label: 'Filled Band' },
+  { id: 'plain', label: 'Clean Plain' },
+];
+
+type ColorFieldKey = 'primaryColor' | 'secondaryColor' | 'accentColor' | 'backgroundColor' | 'textColor';
+const COLOR_FIELDS: { key: ColorFieldKey; label: string }[] = [
+  { key: 'primaryColor', label: 'Primary Accent' },
+  { key: 'secondaryColor', label: 'Sidebar / Header' },
+  { key: 'accentColor', label: 'Accent / Icon' },
+  { key: 'backgroundColor', label: 'Background' },
+  { key: 'textColor', label: 'Text Color' },
+];
+
+export default function TemplateAnalyzer() {
+  const { t } = useApp();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [step, setStep] = useState<Step>('upload');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [analysis, setAnalysis] = useState<TemplateAnalysis | null>(null);
+  const [singletonValues, setSingletonValues] = useState<Record<string, string>>({});
+  const [entries, setEntries] = useState<Record<string, EntryGroup[]>>({});
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [generatedCv, setGeneratedCv] = useState('');
+  const [error, setError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const [showEditor, setShowEditor] = useState(false);
+  const [viewMode, setViewMode] = useState<'visual' | 'text'>('visual');
+  const [styleOverrides, setStyleOverrides] = useState<Partial<TemplateStyle>>({});
+  const [layoutType, setLayoutType] = useState<TemplateAnalysis['layout']['type'] | undefined>(undefined);
+  const [layoutOverrides, setLayoutOverrides] = useState<Partial<TemplateAnalysis['layout']>>({});
+  const [showLayoutEditor, setShowLayoutEditor] = useState(false);
+  const [customLayout, setCustomLayout] = useState<CustomLayout | null>(null);
+  const [cvZoom, setCvZoom] = useState<number>(0.75);
+
+  const [aiMode, setAiMode] = useState<'checking' | 'live' | 'demo'>('checking');
+  const [aiDetail, setAiDetail] = useState('');
+  const [palette, setPalette] = useState<string[]>([]);
+  const [refinedSingleton, setRefinedSingleton] = useState<Record<string, string> | null>(null);
+  const [refinedEntries, setRefinedEntries] = useState<Record<string, Array<Record<string, string>>> | null>(null);
+  const [useRewrites, setUseRewrites] = useState(true);
+  const [fontTarget, setFontTarget] = useState<'all' | 'name' | 'headings' | 'body'>('all');
+
+  const currentFontFamily = useMemo(() => {
+    const styleNow = {
+      ...analysis?.style,
+      ...styleOverrides,
+      typography: { ...(analysis?.style.typography || {}), ...(styleOverrides.typography || {}) },
+    };
+    if (fontTarget === 'name') return styleNow.typography?.name?.family || styleNow.fontFamily || 'Arial, sans-serif';
+    if (fontTarget === 'headings') return styleNow.typography?.sectionHeading?.family || styleNow.fontFamily || 'Arial, sans-serif';
+    if (fontTarget === 'body') return styleNow.typography?.body?.family || styleNow.fontFamily || 'Arial, sans-serif';
+    return styleNow.fontFamily || styleNow.typography?.body?.family || 'Arial, sans-serif';
+  }, [fontTarget, analysis, styleOverrides]);
+
+  const currentActiveFontSize = useMemo(() => {
+    const styleNow = {
+      ...analysis?.style,
+      ...styleOverrides,
+      typography: { ...(analysis?.style.typography || {}), ...(styleOverrides.typography || {}) },
+    };
+    if (fontTarget === 'name') return styleNow.typography?.name?.size || styleNow.nameSize || 24;
+    if (fontTarget === 'headings') return styleNow.typography?.sectionHeading?.size || styleNow.headingSize || 12.5;
+    if (fontTarget === 'body') return styleNow.typography?.body?.size || styleNow.bodySize || 9.5;
+    return styleNow.bodySize || styleNow.typography?.body?.size || 9.5;
+  }, [fontTarget, analysis, styleOverrides]);
+
+  const currentLineHeight = useMemo(() => {
+    const styleNow = {
+      ...analysis?.style,
+      ...styleOverrides,
+      typography: { ...(analysis?.style.typography || {}), ...(styleOverrides.typography || {}) },
+    };
+    return styleNow.typography?.body?.lineHeight || styleNow.lineHeight || 1.45;
+  }, [analysis, styleOverrides]);
+
+  const handleWordFontFamilyChange = (fontId: string, target = fontTarget) => {
+    setStyleOverrides((prev) => {
+      const prevTypo = prev.typography || {};
+      if (target === 'all') {
+        return {
+          ...prev,
+          fontFamily: fontId,
+          typography: {
+            ...prevTypo,
+            name: { ...(prevTypo.name || {}), family: fontId },
+            jobTitle: { ...(prevTypo.jobTitle || {}), family: fontId },
+            sectionHeading: { ...(prevTypo.sectionHeading || {}), family: fontId },
+            sidebarHeading: { ...(prevTypo.sidebarHeading || {}), family: fontId },
+            body: { ...(prevTypo.body || {}), family: fontId },
+            sidebarText: { ...(prevTypo.sidebarText || {}), family: fontId },
+          },
+        };
+      }
+      if (target === 'name') {
+        return {
+          ...prev,
+          typography: {
+            ...prevTypo,
+            name: { ...(prevTypo.name || {}), family: fontId },
+            jobTitle: { ...(prevTypo.jobTitle || {}), family: fontId },
+          },
+        };
+      }
+      if (target === 'headings') {
+        return {
+          ...prev,
+          typography: {
+            ...prevTypo,
+            sectionHeading: { ...(prevTypo.sectionHeading || {}), family: fontId },
+            sidebarHeading: { ...(prevTypo.sidebarHeading || {}), family: fontId },
+          },
+        };
+      }
+      if (target === 'body') {
+        return {
+          ...prev,
+          typography: {
+            ...prevTypo,
+            body: { ...(prevTypo.body || {}), family: fontId },
+            sidebarText: { ...(prevTypo.sidebarText || {}), family: fontId },
+          },
+        };
+      }
+      return prev;
+    });
+  };
+
+  const handleWordFontSizeChange = (newSizePt: number, target = fontTarget) => {
+    setStyleOverrides((prev) => {
+      const prevTypo = prev.typography || {};
+      if (target === 'name') {
+        return {
+          ...prev,
+          nameSize: newSizePt,
+          typography: {
+            ...prevTypo,
+            name: { ...(prevTypo.name || {}), size: newSizePt },
+            jobTitle: { ...(prevTypo.jobTitle || {}), size: Math.max(11, newSizePt - 10) },
+          },
+        };
+      }
+      if (target === 'headings') {
+        return {
+          ...prev,
+          headingSize: newSizePt,
+          typography: {
+            ...prevTypo,
+            sectionHeading: { ...(prevTypo.sectionHeading || {}), size: newSizePt },
+            sidebarHeading: { ...(prevTypo.sidebarHeading || {}), size: Math.max(7, newSizePt - 1) },
+          },
+        };
+      }
+      if (target === 'body') {
+        return {
+          ...prev,
+          bodySize: newSizePt,
+          typography: {
+            ...prevTypo,
+            body: { ...(prevTypo.body || {}), size: newSizePt },
+            sidebarText: { ...(prevTypo.sidebarText || {}), size: Math.max(6, newSizePt - 0.5) },
+          },
+        };
+      }
+      // 'all'
+      const currentBody = prev.bodySize || prevTypo.body?.size || analysis?.style.bodySize || 9.5;
+      const ratio = newSizePt / currentBody;
+      const newNameSize = Math.round(((prev.nameSize || prevTypo.name?.size || analysis?.style.nameSize || 24) * ratio) * 10) / 10;
+      const newHeadingSize = Math.round(((prev.headingSize || prevTypo.sectionHeading?.size || analysis?.style.headingSize || 12.5) * ratio) * 10) / 10;
+      return {
+        ...prev,
+        bodySize: newSizePt,
+        nameSize: newNameSize,
+        headingSize: newHeadingSize,
+        typography: {
+          ...prevTypo,
+          body: { ...(prevTypo.body || {}), size: newSizePt },
+          sidebarText: { ...(prevTypo.sidebarText || {}), size: Math.max(6, newSizePt - 0.5) },
+          name: { ...(prevTypo.name || {}), size: newNameSize },
+          sectionHeading: { ...(prevTypo.sectionHeading || {}), size: newHeadingSize },
+          sidebarHeading: { ...(prevTypo.sidebarHeading || {}), size: Math.max(7, newHeadingSize - 1) },
+        },
+      };
+    });
+  };
+
+  const handleGrowFont = () => {
+    const stepVal = fontTarget === 'name' ? 1 : 0.5;
+    handleWordFontSizeChange(currentActiveFontSize + stepVal);
+  };
+
+  const handleShrinkFont = () => {
+    const stepVal = fontTarget === 'name' ? 1 : 0.5;
+    const minVal = fontTarget === 'name' ? 14 : fontTarget === 'headings' ? 8 : 6.5;
+    handleWordFontSizeChange(Math.max(minVal, currentActiveFontSize - stepVal));
+  };
+
+  const handleLineHeightChange = (lh: number) => {
+    setStyleOverrides((prev) => {
+      const prevTypo = prev.typography || {};
+      return {
+        ...prev,
+        lineHeight: lh,
+        typography: {
+          ...prevTypo,
+          body: { ...(prevTypo.body || {}), lineHeight: lh },
+          sidebarText: { ...(prevTypo.sidebarText || {}), lineHeight: Math.max(1.1, lh - 0.05) },
+        },
+      };
+    });
+  };
+
+  const handleResetTypography = () => {
+    setStyleOverrides((prev) => {
+      const next = { ...prev };
+      delete next.fontFamily;
+      delete next.nameSize;
+      delete next.headingSize;
+      delete next.bodySize;
+      delete next.lineHeight;
+      delete next.typography;
+      return next;
+    });
+  };
+
+  const applyPalette = (p: typeof PRESET_PALETTES[0]) => {
+    setStyleOverrides((prev) => ({
+      ...prev,
+      primaryColor: p.primary,
+      secondaryColor: p.sidebar,
+      accentColor: p.accent,
+      theme: {
+        ...(prev.theme || analysis?.style.theme || {}),
+        headingColor: p.primary,
+        sidebarBackground: p.sidebar,
+        borderColor: p.primary,
+        iconColor: p.accent,
+      },
+    }));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/ai-status');
+        const data = await res.json();
+        if (!cancelled && data.configured) {
+          setAiMode('live');
+          setAiDetail(`${data.provider} · ${data.model}`);
+        } else if (!cancelled) {
+          setAiMode('demo');
+        }
+      } catch {
+        if (!cancelled) setAiMode('demo');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (analysis?.layout.geometry?.orientation !== 'landscape') return;
+    const el = document.createElement('style');
+    el.id = 'cv-landscape-print';
+    el.textContent = '@media print { @page { size: A4 landscape; } }';
+    document.head.appendChild(el);
+    return () => {
+      document.head.removeChild(el);
+    };
+  }, [analysis]);
+
+  const simpleEntries = useMemo<Record<string, Array<Record<string, string>>>>(() => {
+    const out: Record<string, Array<Record<string, string>>> = {};
+    Object.entries(entries).forEach(([sectionId, group]) => {
+      out[sectionId] = group.map((g) => g.values);
+    });
+    return out;
+  }, [entries]);
+
+  const renderSingleton = useRewrites && refinedSingleton ? refinedSingleton : singletonValues;
+  const renderEntries = useRewrites && refinedEntries ? refinedEntries : simpleEntries;
+
+  const layoutWarnings = useMemo(
+    () => (analysis ? validateLayout(analysis, customLayout ?? undefined) : []),
+    [analysis, customLayout],
+  );
+
+  const fidelity = useMemo(
+    () => (analysis ? scoreTemplateMatch(analysis, { styleOverrides, layoutType, customLayout }) : null),
+    [analysis, styleOverrides, layoutType, customLayout],
+  );
+
+  const readFileAsDataUrl = useCallback(
+    (file: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      }),
+    [],
+  );
+
+  const convertPdfToImage = useCallback(async (dataUrl: string): Promise<string> => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+    const raw = atob(dataUrl.split(',')[1]);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const page = await pdf.getPage(1);
+    const vp = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return canvas.toDataURL('image/png');
+  }, []);
+
+  const cropRegion = useCallback((dataUrl: string, crop: TemplatePhotoCrop): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = Math.max(1, Math.round(crop.width * img.naturalWidth));
+        const h = Math.max(1, Math.round(crop.height * img.naturalHeight));
+        const x = Math.max(0, Math.min(img.naturalWidth - w, Math.round(crop.left * img.naturalWidth)));
+        const y = Math.max(0, Math.min(img.naturalHeight - h, Math.round(crop.top * img.naturalHeight)));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Failed to load template image'));
+      img.src = dataUrl;
+    });
+  }, []);
+
+  const processFile = useCallback(
+    async (file: File) => {
+      setError('');
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        setError('Please upload a PNG, JPG, WebP, GIF, or PDF file.');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setError('File must be under 10 MB.');
+        return;
+      }
+
+      const isPdf = file.type === 'application/pdf';
+      const dataUrl = await readFileAsDataUrl(file);
+      const rawImage = isPdf ? await convertPdfToImage(dataUrl) : dataUrl;
+      const imageToAnalyze = await resizeDataUrl(rawImage, 1024);
+
+      setPreviewUrl(imageToAnalyze);
+      const pal = await extractPalette(imageToAnalyze);
+      setPalette(pal);
+      setStep('analyzing');
+
+      try {
+        let result: TemplateAnalysis | null = null;
+        let apiError = '';
+        try {
+          const apiRes = await fetch('/api/analyze-template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imageToAnalyze, palette: pal }),
+          });
+          if (apiRes.ok) {
+            const payload = await apiRes.json();
+            if (payload && !payload.mock && payload.analysis) {
+              result = payload.analysis;
+            } else if (payload?.mock && payload?.error) {
+              apiError = payload.error;
+            }
+          } else {
+            const errPayload = await apiRes.json().catch(() => null);
+            apiError = errPayload?.error || `Server returned ${apiRes.status}`;
+          }
+        } catch (e) {
+          apiError = e instanceof Error ? e.message : 'Network error';
+        }
+        if (!result) {
+          // If server AI (Gemini) reached quota or failed, try Puter.js AI vision client-side!
+          try {
+            const puterResult = await analyzeWithPuterClient(imageToAnalyze, pal);
+            if (puterResult) {
+              result = puterResult;
+              apiError = ''; // Puter AI successfully handled vision analysis
+            }
+          } catch (puterErr) {
+            console.warn('[Puter AI Client]', puterErr);
+          }
+        }
+        if (!result) {
+          // If all AI engines are unavailable, fall through to local estimation
+          if (apiError) {
+            console.warn('[analyze-template] AI unavailable:', apiError);
+          }
+          result = await aiService.analyzeTemplate(imageToAnalyze);
+        }
+        const analyzed = applySampledColors(result, pal);
+        setAnalysis(analyzed);
+        setSingletonValues(analyzed.content || {});
+        let defaultPhoto = '';
+        const templateCrop = analyzed.layout.photo?.crop;
+        if (templateCrop) {
+          try {
+            defaultPhoto = await cropRegion(imageToAnalyze, templateCrop);
+          } catch {
+            // template photo extraction failed — user can upload their own
+          }
+        }
+        const initialEntries: Record<string, EntryGroup[]> = {};
+        analyzed.sections.forEach((section) => {
+          if (section.repeatable) {
+            const defaultItems = analyzed.contentEntries?.[section.id] || [];
+            initialEntries[section.id] =
+              defaultItems.length > 0
+                ? defaultItems.map((values, i) => ({ id: `entry-${section.id}-${i}`, values }))
+                : [{ id: `entry-${section.id}-0`, values: {} }];
+          }
+        });
+        setEntries(initialEntries);
+        setPhotoUrl(defaultPhoto);
+        setStyleOverrides({});
+        setLayoutType(undefined);
+        setCustomLayout(null);
+        setShowLayoutEditor(false);
+        setRefinedSingleton(null);
+        setRefinedEntries(null);
+        if (apiError) {
+          const isQuota = apiError.includes('429') || apiError.toLowerCase().includes('quota');
+          const isModel = apiError.includes('404');
+          const msg = isQuota
+            ? 'AI rate limit reached on free tier. Showing estimated template — you can verify and customize all sections below.'
+            : isModel
+              ? 'AI model unavailable. Showing estimated template — you can verify and customize all sections below.'
+              : `AI service notice: ${apiError.length > 120 ? apiError.slice(0, 120) + '...' : apiError}. Showing estimated template.`;
+          setError(msg);
+        }
+        setStep('result');
+      } catch {
+        setError('Analysis failed. Please try again with a clearer image.');
+        setStep('upload');
+      }
+    },
+    [readFileAsDataUrl, convertPdfToImage, cropRegion],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    },
+    [processFile],
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) processFile(file);
+    },
+    [processFile],
+  );
+
+  const handlePhotoChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const dataUrl = await readFileAsDataUrl(file);
+      setPhotoUrl(dataUrl);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    },
+    [readFileAsDataUrl],
+  );
+
+  const addEntry = (sectionId: string) => {
+    setEntries((prev) => ({
+      ...prev,
+      [sectionId]: [...(prev[sectionId] || []), { id: `entry-${sectionId}-${Date.now()}`, values: {} }],
+    }));
+  };
+
+  const removeEntry = (sectionId: string, entryId: string) => {
+    setEntries((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] || []).filter((e) => e.id !== entryId),
+    }));
+  };
+
+  const updateEntry = (sectionId: string, entryId: string, fieldId: string, value: string) => {
+    setEntries((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] || []).map((e) =>
+        e.id === entryId ? { ...e, values: { ...e.values, [fieldId]: value } } : e,
+      ),
+    }));
+  };
+
+  const handleGenerate = async () => {
+    if (!analysis || generating) return;
+    setGenerating(true);
+    setError('');
+    const simpleEntries: Record<string, Array<Record<string, string>>> = {};
+    Object.entries(entries).forEach(([sectionId, group]) => {
+      simpleEntries[sectionId] = group.map((g) => g.values);
+    });
+
+    let cv = '';
+    let refS: Record<string, string> | null = null;
+    let refE: Record<string, Array<Record<string, string>>> | null = null;
+    try {
+      const apiRes = await fetch('/api/write-cv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis,
+          singleton: singletonValues,
+          entries: simpleEntries,
+          language: 'en',
+        }),
+      });
+      if (apiRes.ok) {
+        const payload = await apiRes.json();
+        if (payload && !payload.mock) {
+          cv = typeof payload.cv === 'string' ? payload.cv : '';
+          refS = payload.refined?.singleton ?? null;
+          refE = payload.refined?.entries ?? null;
+        }
+      }
+    } catch {
+      // real AI unavailable — fall back to Puter AI / local text below
+    }
+    if (!cv) {
+      // If server write-cv failed or hit Gemini rate limit, try client Puter AI
+      try {
+        const puterCv = await writeCvWithPuterClient(analysis, singletonValues, simpleEntries);
+        if (puterCv?.cv) {
+          cv = puterCv.cv;
+          refS = puterCv.refinedSingleton ?? null;
+          refE = puterCv.refinedEntries ?? null;
+        }
+      } catch (puterErr) {
+        console.warn('[Puter AI write-cv]', puterErr);
+      }
+    }
+    if (!cv) {
+      cv = aiService.generateFromTemplate(analysis, singletonValues, simpleEntries, Boolean(photoUrl));
+    }
+
+    setGeneratedCv(cv);
+    setRefinedSingleton(refS);
+    setRefinedEntries(refE);
+    setUseRewrites(Boolean(refS) || Boolean(refE));
+    setGenerating(false);
+    setStep('generated');
+  };
+
+  const handleStartOver = () => {
+    setStep('upload');
+    setPreviewUrl('');
+    setAnalysis(null);
+    setSingletonValues({});
+    setEntries({});
+    setPhotoUrl('');
+    setGeneratedCv('');
+    setError('');
+    setShowEditor(false);
+    setStyleOverrides({});
+    setLayoutType(undefined);
+    setLayoutOverrides({});
+    setPalette([]);
+  };
+
+  const handleDownloadPdf = async () => {
+    const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
+    const filename = `${name.replace(/\s+/g, '_')}_CV.pdf`;
+    try {
+      await exportToPdfDownload('cv-print-root', filename);
+    } catch (err) {
+      console.error('Direct PDF export failed, fallback to print:', err);
+      exportToPdf();
+    }
+  };
+
+  const handleDownloadWord = async () => {
+    if (!analysis) return;
+    const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
+    const filename = `${name.replace(/\s+/g, '_')}_CV.docx`;
+    await exportToWord(analysis, renderSingleton, renderEntries, filename, styleOverrides);
+  };
+
+  const handleDownloadImage = async () => {
+    if (!analysis) return;
+    const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
+    const filename = `${name.replace(/\s+/g, '_')}_CV.png`;
+    await exportToImage('cv-print-root', filename);
+  };
+
+  const renderField = (field: TemplateField, value: string, onValue: (v: string) => void) => {
+    return (
+      <div key={field.id}>
+        <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+          {field.label}
+          {field.required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+        {field.type === 'textarea' ? (
+          <textarea
+            className={BASE_FIELD_CLASS}
+            rows={3}
+            placeholder={field.placeholder}
+            value={value}
+            onChange={(e) => onValue(e.target.value)}
+          />
+        ) : field.type === 'select' && field.options ? (
+          <select
+            className={BASE_FIELD_CLASS}
+            value={value}
+            onChange={(e) => onValue(e.target.value)}
+          >
+            <option value="">Select...</option>
+            {field.options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type={field.type === 'phone' ? 'tel' : field.type === 'date' ? 'date' : field.type}
+            className={BASE_FIELD_CLASS}
+            placeholder={field.placeholder}
+            value={value}
+            onChange={(e) => onValue(e.target.value)}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderSectionForm = (section: TemplateSection) => {
+    const fields = analysis?.fields.filter((f) => f.section === section.id) || [];
+    const total = (
+      <div key={section.id} className="space-y-3">
+        <div className="border-b border-gray-200 dark:border-zinc-700 pb-2 flex items-start justify-between gap-2">
+          <div>
+            <h4 className="font-semibold text-gray-900 dark:text-zinc-100">{section.name}</h4>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">{section.description}</p>
+          </div>
+          {section.repeatable && (
+            <Button type="button" variant="outline" size="sm" onClick={() => addEntry(section.id)}>
+              + {t.templates.addEntry}
+            </Button>
+          )}
+        </div>
+
+        {section.repeatable ? (
+          entryForm(section, fields)
+        ) : (
+          <>
+            {fields.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{fields.map((field) => renderField(field, singletonValues[field.id] || '', (v) => setSingletonValues((prev) => ({ ...prev, [field.id]: v }))))}</div>}
+            {section.id === 'personal' && renderPhotoInput()}
+          </>
+        )}
+      </div>
+    );
+    return total;
+  };
+
+  const entryForm = (section: TemplateSection, fields: TemplateField[]) => {
+    const group = entries[section.id] || [];
+    return (
+      <div className="space-y-3">
+        {group.length === 0 && (
+          <p className="text-sm text-gray-400 dark:text-zinc-500 text-center py-3 border border-dashed border-gray-200 dark:border-zinc-700 rounded-lg">
+            No entries yet — click &quot;{t.templates.addEntry}&quot; to begin.
+          </p>
+        )}
+        {group.map((grp, gi) => (
+          <div key={grp.id} className="border border-gray-200 dark:border-zinc-700 rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-zinc-800/50">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                {section.name} {gi + 1}
+              </span>
+              {group.length > 1 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                  onClick={() => removeEntry(section.id, grp.id)}
+                >
+                  {t.common.remove}
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {fields.map((field) =>
+                renderField(field, grp.values[field.id] || '', (v) =>
+                  updateEntry(section.id, grp.id, field.id, v),
+                ),
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderPhotoInput = () => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+        {t.templates.photo}
+      </label>
+      <div className="flex items-center gap-3">
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          className="w-full text-sm text-gray-500 dark:text-zinc-400 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-300"
+          onChange={handlePhotoChange}
+        />
+        {photoUrl && (
+          <button
+            type="button"
+            onClick={() => setPhotoUrl('')}
+            className="text-xs text-red-600 dark:text-red-400 hover:underline whitespace-nowrap"
+          >
+            {t.templates.removePhoto}
+          </button>
+        )}
+      </div>
+      {photoUrl && (
+        <div className="mt-3">
+          {pictureTag()}
+        </div>
+      )}
+    </div>
+  );
+
+  const pictureTag = () => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={photoUrl}
+      alt="Profile preview"
+      className="h-24 w-24 object-cover rounded-lg border border-gray-300 dark:border-zinc-600"
+    />
+  );
+
+  const renderEditorPanel = () => {
+    if (!analysis) return null;
+    const styleNow = { ...analysis.style, ...styleOverrides };
+    return (
+      <div className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-semibold text-gray-900 dark:text-zinc-100">
+            {t.templates.designEditor}
+          </h4>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setStyleOverrides({})}>
+            {t.templates.resetDesign}
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              {t.templates.layout}
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={layoutType || analysis.layout.type}
+              onChange={(e) => setLayoutType(e.target.value as typeof layoutType)}
+            >
+              {LAYOUT_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt.replace('-', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              {t.templates.headerStyle}
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={styleNow.headerStyle}
+              onChange={(e) => setStyleOverrides((prev) => ({ ...prev, headerStyle: e.target.value as TemplateStyle['headerStyle'] }))}
+            >
+              {HEADER_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt.replace('-', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              Header Band Placement
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={layoutOverrides.headerPlacement || analysis.layout.headerPlacement || 'top-full-width'}
+              onChange={(e) =>
+                setLayoutOverrides((prev) => ({
+                  ...prev,
+                  headerPlacement: e.target.value as any,
+                }))
+              }
+            >
+              <option value="top-full-width">Top Full-Width (100% across top)</option>
+              <option value="main-column">In Main Column (Sidebar to top)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              {t.templates.sectionDivider}
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={styleNow.sectionDivider}
+              onChange={(e) => setStyleOverrides((prev) => ({ ...prev, sectionDivider: e.target.value as TemplateStyle['sectionDivider'] }))}
+            >
+              {DIVIDER_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Preset Palettes */}
+          <div className="sm:col-span-2 lg:col-span-3 bg-gray-50 dark:bg-zinc-800/60 p-3.5 rounded-xl border border-gray-200 dark:border-zinc-700">
+            <span className="text-xs font-bold text-gray-900 dark:text-zinc-100 block mb-2">
+              🎨 Curated Theme Palettes
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {PRESET_PALETTES.map((pal) => (
+                <button
+                  key={pal.name}
+                  type="button"
+                  onClick={() => applyPalette(pal)}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-blue-500 hover:shadow-xs transition-all text-center"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-xs" style={{ backgroundColor: pal.primary }} />
+                    <span className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-xs" style={{ backgroundColor: pal.sidebar }} />
+                    <span className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-xs" style={{ backgroundColor: pal.accent }} />
+                  </div>
+                  <span className="text-[11px] font-semibold text-gray-700 dark:text-zinc-300 truncate w-full">
+                    {pal.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bullet Style & Heading Variant */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              Bullet Style (List Marks)
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={styleNow.bulletStyle || 'dot'}
+              onChange={(e) =>
+                setStyleOverrides((prev) => ({
+                  ...prev,
+                  bulletStyle: e.target.value as any,
+                }))
+              }
+            >
+              {BULLET_STYLE_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              Heading Style
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={styleNow.headingVariant || 'underline'}
+              onChange={(e) =>
+                setStyleOverrides((prev) => ({
+                  ...prev,
+                  headingVariant: e.target.value as any,
+                }))
+              }
+            >
+              {HEADING_VARIANT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              Line Spacing (Density)
+            </label>
+            <select
+              className={BASE_FIELD_CLASS}
+              value={styleNow.lineHeight || 1.45}
+              onChange={(e) => handleLineHeightChange(parseFloat(e.target.value))}
+            >
+              <option value={1.15}>Tight (1.15) · Max Content</option>
+              <option value={1.35}>Normal (1.35) · Compact</option>
+              <option value={1.45}>Standard (1.45) · Recommended</option>
+              <option value={1.6}>Spacious (1.6) · Elegant</option>
+            </select>
+          </div>
+
+          {/* Typography & Word Office Font Family */}
+          <div className="sm:col-span-2 lg:col-span-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1">
+              {t.templates.fontFamily} (Word Office & Modern)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className={BASE_FIELD_CLASS}
+                value={styleNow.fontFamily || ''}
+                onChange={(e) => handleWordFontFamilyChange(e.target.value, 'all')}
+                placeholder="Font Family CSS (e.g. Arial, Inter, Calibri)"
+              />
+              <select
+                className={`${BASE_FIELD_CLASS} w-52 shrink-0`}
+                value={styleNow.fontFamily || ''}
+                onChange={(e) => handleWordFontFamilyChange(e.target.value, 'all')}
+              >
+                <option value="" disabled>Presets</option>
+                <optgroup label="Word Office Standards">
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value='Calibri, Candara, "Segoe UI", Optima, Arial, sans-serif'>Calibri</option>
+                  <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                  <option value="Georgia, serif">Georgia</option>
+                  <option value='Garamond, Baskerville, "Times New Roman", serif'>Garamond</option>
+                  <option value="Verdana, Geneva, sans-serif">Verdana</option>
+                  <option value="'Trebuchet MS', 'Lucida Sans', Arial, sans-serif">Trebuchet MS</option>
+                  <option value="'Courier New', Courier, monospace">Courier New</option>
+                </optgroup>
+                <optgroup label="Modern Google Fonts">
+                  <option value="Inter, sans-serif">Inter (Clean)</option>
+                  <option value="Roboto, sans-serif">Roboto</option>
+                  <option value="Outfit, sans-serif">Outfit (Modern)</option>
+                  <option value="Merriweather, serif">Merriweather</option>
+                  <option value="'Playfair Display', serif">Playfair Display</option>
+                  <option value="Montserrat, sans-serif">Montserrat</option>
+                  <option value="Poppins, sans-serif">Poppins</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          {/* Word Office Font Size Steppers */}
+          <div className="sm:col-span-2 lg:col-span-3 bg-gray-50 dark:bg-zinc-800/60 p-3.5 rounded-xl border border-gray-200 dark:border-zinc-700">
+            <span className="text-xs font-bold text-gray-900 dark:text-zinc-100 block mb-2.5">
+              🔤 Word Office Font Size Steppers
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Name Size */}
+              <div className="space-y-1">
+                <span className="text-xs text-gray-600 dark:text-zinc-400 block">Candidate Name</span>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.max(12, ((styleNow.nameSize || 24) - 1)), 'name')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center font-mono text-xs font-bold text-gray-900 dark:text-zinc-100">
+                    {styleNow.nameSize || 24}pt
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.min(40, ((styleNow.nameSize || 24) + 1)), 'name')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Headings Size */}
+              <div className="space-y-1">
+                <span className="text-xs text-gray-600 dark:text-zinc-400 block">Section Headings</span>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.max(8, ((styleNow.headingSize || 12.5) - 0.5)), 'headings')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center font-mono text-xs font-bold text-gray-900 dark:text-zinc-100">
+                    {styleNow.headingSize || 12.5}pt
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.min(24, ((styleNow.headingSize || 12.5) + 0.5)), 'headings')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Body Size */}
+              <div className="space-y-1">
+                <span className="text-xs text-gray-600 dark:text-zinc-400 block">Body & Bullet Text</span>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.max(6.5, ((styleNow.bodySize || 9.5) - 0.5)), 'body')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center font-mono text-xs font-bold text-gray-900 dark:text-zinc-100">
+                    {styleNow.bodySize || 9.5}pt
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleWordFontSizeChange(Math.min(16, ((styleNow.bodySize || 9.5) + 0.5)), 'body')}
+                    className="w-7 h-7 flex items-center justify-center font-bold text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-3 border-t border-gray-100 dark:border-zinc-800 pt-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+              Profile Photo
+            </label>
+            <div className="flex items-center gap-3">
+              {photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoUrl} alt="Preview" className="w-10 h-10 rounded-full object-cover border" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-sm">📷</div>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()}>
+                {photoUrl ? 'Change Photo' : 'Upload Photo'}
+              </Button>
+              {photoUrl && (
+                <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-600 text-xs" onClick={() => setPhotoUrl('')}>
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+              Custom Colors
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {COLOR_FIELDS.map(({ key: ckey, label }) => (
+                <div key={ckey}>
+                  <label className="block text-xs text-gray-500 dark:text-zinc-400 mb-1">{label}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={styleNow[ckey] || (ckey === 'primaryColor' ? '#1e3a8a' : ckey === 'textColor' ? '#1f2937' : '#ffffff')}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setStyleOverrides((prev) => ({
+                          ...prev,
+                          [ckey]: val,
+                          theme: {
+                            ...(prev.theme || {}),
+                            ...(ckey === 'primaryColor' ? { headingColor: val, borderColor: val } : {}),
+                            ...(ckey === 'secondaryColor' ? { sidebarBackground: val } : {}),
+                            ...(ckey === 'accentColor' ? { iconColor: val } : {}),
+                            ...(ckey === 'backgroundColor' ? { mainBackground: val } : {}),
+                            ...(ckey === 'textColor' ? { textColor: val } : {}),
+                          },
+                        }));
+                      }}
+                      className="h-9 w-12 cursor-pointer rounded border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                    />
+                    <span className="text-xs text-gray-500 dark:text-zinc-400 font-mono">
+                      {styleNow[ckey]}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAnalyzedSections = () => {
+    if (!analysis) return null;
+    return (
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 mb-2">Detected Sections</h4>
+        <div className="space-y-1">
+          {analysis.layout.orderedSections.map((sectionId, index) => {
+            const section = analysis.sections.find((s) => s.id === sectionId);
+            if (!section) return null;
+            return (
+              <div key={sectionId} className="flex items-center gap-2 text-sm">
+                <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">
+                  {index + 1}
+                </span>
+                <span className="text-gray-700 dark:text-zinc-300">{section.name}</span>
+                {section.repeatable && <span className="text-xs text-gray-400 dark:text-zinc-500">(+)</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handlePhotoChange}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100 mb-2">{t.templates.title}</h1>
+          <p className="text-gray-600 dark:text-zinc-400">{t.templates.subtitle}</p>
+        </div>
+        {aiMode === 'live' ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 px-2.5 py-1 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            {t.templates.aiLive} · {aiDetail}
+          </span>
+        ) : aiMode === 'demo' ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-2.5 py-1 rounded-full">
+            {t.templates.aiDemo}
+          </span>
+        ) : null}
+      </div>
+
+      {step === 'upload' && (
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className={`cursor-pointer rounded-xl border-2 border-dashed p-16 text-center transition-colors ${dragOver
+            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+            : 'border-gray-300 dark:border-zinc-600 hover:border-blue-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50'
+            }`}
+        >
+          <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleFileChange} className="hidden" />
+          <div className="text-4xl mb-4">📄</div>
+          <p className="text-lg font-medium text-gray-900 dark:text-zinc-100 mb-1">{t.templates.dragDrop}</p>
+          <p className="text-sm text-gray-500 dark:text-zinc-400">{t.templates.fileTypes}</p>
+        </div>
+      )}
+
+      {step === 'analyzing' && (
+        <div className="space-y-6">
+          {previewUrl && (
+            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Template preview" className="w-full max-h-96 object-contain bg-gray-50 dark:bg-zinc-800" />
+            </div>
+          )}
+          <div className="flex flex-col items-center gap-4 py-12">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-700 dark:text-zinc-300 font-medium">{t.templates.analyzing}</p>
+            <p className="text-sm text-gray-500 dark:text-zinc-400 text-center max-w-md">
+              {t.templates.analyzingHint}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {step === 'result' && analysis && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Template preview" className="w-full object-contain bg-gray-50 dark:bg-zinc-800" />
+            </div>
+            <div className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-1">{analysis.templateName}</h3>
+                <p className="text-sm text-blue-800 dark:text-blue-300">{analysis.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3">
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 block mb-1">Layout</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-zinc-100 capitalize">
+                    {analysis.layout.type.replace('-', ' ')}
+                  </span>
+                </div>
+                <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3">
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 block mb-1">Color Style</span>
+                  <div className="flex gap-1 items-center mt-1">
+                    {[analysis.style.primaryColor, analysis.style.secondaryColor, analysis.style.accentColor].map((c, i) => (
+                      <span key={`${c}-${i}`} className="w-4 h-4 rounded-full border border-gray-300 dark:border-zinc-600" style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3">
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 block mb-1">Sections Found</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-zinc-100">{analysis.sections.length}</span>
+                </div>
+                <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3">
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 block mb-1">Photo Required</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-zinc-100">
+                    {analysis.layout.photo?.included ? 'Yes' : 'No'}
+                  </span>
+                </div>
+              </div>
+
+              {palette.length > 0 && (
+                <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3">
+                  <span className="text-xs text-gray-500 dark:text-zinc-400 block mb-2">Detected Colors</span>
+                  <div className="flex items-center gap-2">
+                    {palette.map((c, i) => (
+                      <span
+                        key={`${c}-${i}`}
+                        title={c}
+                        className="w-6 h-6 rounded-full border border-gray-300 dark:border-zinc-600"
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(analysis.layout.photo?.included || photoUrl) && (
+                <div className="bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 rounded-lg p-3.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={photoUrl} alt="Photo" className="w-12 h-12 rounded-full object-cover border-2 border-blue-500 shadow-sm" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 flex items-center justify-center text-xl">📷</div>
+                    )}
+                    <div>
+                      <span className="text-xs font-semibold text-gray-800 dark:text-zinc-200 block">Profile Photo</span>
+                      <span className="text-xs text-gray-500 dark:text-zinc-400">
+                        {photoUrl ? 'Template photo extracted. You can replace it with your own photo.' : 'This template layout includes a photo.'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()}>
+                      {photoUrl ? 'Change' : 'Upload'}
+                    </Button>
+                    {photoUrl && (
+                      <Button type="button" variant="ghost" size="sm" className="text-red-500 text-xs" onClick={() => setPhotoUrl('')}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {renderAnalyzedSections()}
+
+              <div className="flex gap-3">
+                <Button onClick={handleStartOver} variant="outline" size="sm">
+                  {t.templates.uploadNew}
+                </Button>
+                <Button onClick={() => setStep('form')} variant="primary" size="sm">
+                  {t.templates.startFilling} →
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 'form' && analysis && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <Button onClick={() => setStep('result')} variant="outline" size="sm">
+              ← {t.templates.backToAnalysis}
+            </Button>
+            <h3 className="font-semibold text-gray-900 dark:text-zinc-100">{t.templates.fillFields}</h3>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700 sticky top-24 self-start">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Template reference" className="w-full object-contain bg-gray-50 dark:bg-zinc-800" />
+              <div className="px-4 py-2 bg-gray-50 dark:bg-zinc-800 border-t border-gray-200 dark:border-zinc-700">
+                <p className="text-xs text-gray-500 dark:text-zinc-400 text-center">{t.templates.referenceHint}</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {(analysis.layout.photo?.included || photoUrl) && (
+                <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    {photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={photoUrl}
+                        alt="Profile Preview"
+                        className="w-16 h-16 rounded-full object-cover border-2 border-blue-500 shadow-md"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/30 border-2 border-dashed border-blue-300 dark:border-blue-700 flex items-center justify-center text-2xl text-blue-500">
+                        📷
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-semibold text-gray-900 dark:text-zinc-100">Profile Photo</h4>
+                      <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+                        {photoUrl
+                          ? 'This photo will appear on your CV. You can replace or remove it anytime.'
+                          : 'Upload your portrait photo for this CV.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                    <Button type="button" variant="primary" size="sm" onClick={() => photoInputRef.current?.click()}>
+                      {photoUrl ? 'Change Photo' : 'Upload Photo'}
+                    </Button>
+                    {photoUrl && (
+                      <Button type="button" variant="outline" size="sm" className="text-red-600 dark:text-red-400 hover:bg-red-50" onClick={() => setPhotoUrl('')}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {analysis.layout.orderedSections.map((sectionId) => {
+                const section = analysis.sections.find((s) => s.id === sectionId);
+                if (!section) return null;
+                return (
+                  <div key={section.id} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-5 shadow-sm">
+                    {renderSectionForm(section)}
+                  </div>
+                );
+              })}
+
+              <Button onClick={handleGenerate} variant="primary" className="w-full" size="lg" disabled={generating}>
+                {generating ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {t.templates.analyzing}
+                  </span>
+                ) : (
+                  t.templates.generateCv
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 'generated' && analysis && (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => setStep('form')} variant="outline" size="sm">
+              ← {t.templates.editFields}
+            </Button>
+            <Button variant={showEditor ? 'primary' : 'outline'} size="sm" onClick={() => setShowEditor((v) => !v)}>
+              {t.templates.editDesign}
+            </Button>
+            <Button
+              variant={showLayoutEditor ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setShowLayoutEditor((v) => !v)}
+            >
+              {t.templates.arrangeLayout}
+            </Button>
+            {(refinedSingleton || refinedEntries) && (
+              <button
+                onClick={() => setUseRewrites((v) => !v)}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${useRewrites
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-zinc-300'
+                  }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] font-bold ${useRewrites ? 'bg-white text-blue-600 border-white' : 'border-gray-400 dark:border-zinc-600'
+                    }`}
+                >
+                  {useRewrites ? '✓' : ''}
+                </span>
+                {t.templates.useAiRewrite}
+              </button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => photoInputRef.current?.click()}>
+              📷 {photoUrl ? 'Change Photo' : 'Add Photo'}
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleDownloadPdf}>
+              📄 {t.templates.downloadCv}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadWord}>
+              📝 Word (.docx)
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadImage}>
+              🖼️ Image (.png)
+            </Button>
+            <div className="flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 px-2.5 py-1 text-xs">
+              <span className="text-gray-500 dark:text-zinc-400 font-medium">Paper Zoom:</span>
+              <select
+                value={cvZoom}
+                onChange={(e) => setCvZoom(Number(e.target.value))}
+                className="bg-transparent text-gray-800 dark:text-zinc-200 font-semibold cursor-pointer focus:outline-none"
+              >
+                <option value={0.65}>Fit (65%)</option>
+                <option value={0.75}>Standard A4 (99%)</option>
+                <option value={0.85}>Large (85%)</option>
+                <option value={1.0}>Actual A4 (100%)</option>
+              </select>
+            </div>
+            <div className="ml-auto flex items-center gap-1 rounded-lg border border-gray-300 dark:border-zinc-700 p-1">
+              <button
+                onClick={() => setViewMode('visual')}
+                className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'visual' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-zinc-300'}`}
+              >
+                {t.templates.visual}
+              </button>
+              <button
+                onClick={() => setViewMode('text')}
+                className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'text' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-zinc-300'}`}
+              >
+                {t.templates.textView}
+              </button>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleStartOver}>
+              {t.templates.startOver}
+            </Button>
+          </div>
+
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <p className="text-green-800 dark:text-green-200 font-medium text-sm">
+              ✓ {t.templates.generatedSuccess}
+            </p>
+          </div>
+
+          {showEditor && renderEditorPanel()}
+
+          {showLayoutEditor && analysis && (
+            <div className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-gray-900 dark:text-zinc-100">
+                  {t.templates.arrangeLayout}
+                </h4>
+              </div>
+              <TemplateLayoutEditor
+                analysis={analysis}
+                value={customLayout ?? defaultCustomLayout(analysis)}
+                onChange={setCustomLayout}
+                canRestore={customLayout !== null}
+                warnings={layoutWarnings}
+              />
+            </div>
+          )}
+
+          {fidelity && (
+            <div className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h4 className="font-semibold text-gray-900 dark:text-zinc-100">
+                  {t.templates.templateMatch}
+                </h4>
+                <span
+                  className={`text-2xl font-bold ${fidelity.overall >= 90
+                    ? 'text-green-600 dark:text-green-400'
+                    : fidelity.overall >= 70
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-red-600 dark:text-red-400'
+                    }`}
+                >
+                  {fidelity.overall}%
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(fidelity.breakdown).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-xs text-gray-500 dark:text-zinc-400">
+                      {key === 'layout'
+                        ? t.templates.matchLayout
+                        : key === 'colors'
+                          ? t.templates.matchColors
+                          : key === 'typography'
+                            ? t.templates.matchTypography
+                            : key === 'spacing'
+                              ? t.templates.matchSpacing
+                              : key === 'sections'
+                                ? t.templates.matchSections
+                                : t.templates.matchAlignment}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${value >= 90 ? 'bg-green-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
+                        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+                      />
+                    </div>
+                    <span className="w-9 text-right text-xs font-semibold text-gray-600 dark:text-zinc-300">
+                      {value}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {fidelity.issues.length > 0 && (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2.5 dark:border-amber-900 dark:bg-amber-950">
+                  <p className="mb-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    {t.templates.fidelityNotes}
+                  </p>
+                  <ul className="space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    {fidelity.issues.map((issue) => (
+                      <li key={`${issue.category}-${issue.message}`}>
+                        {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700 self-start">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Original template" className="w-full object-contain bg-gray-50 dark:bg-zinc-800" />
+              <div className="px-4 py-2 bg-gray-50 dark:bg-zinc-800 border-t border-gray-200 dark:border-zinc-700">
+                <p className="text-xs text-gray-500 dark:text-zinc-400 text-center">{t.templates.originalTemplate}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {viewMode === 'visual' ? (
+                <div className="space-y-4">
+                  {/* MS Word-Style Typography & Font Management Bar */}
+                  <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-2.5 shadow-sm flex flex-wrap items-center gap-2.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-gray-700 dark:text-zinc-300 pr-1">
+                      <span className="text-sm">🔤</span>
+                      <span className="hidden sm:inline font-semibold">Word Typography:</span>
+                    </div>
+
+                    {/* Target Level */}
+                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-gray-200 dark:border-zinc-700">
+                      <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-zinc-500">Target</span>
+                      <select
+                        value={fontTarget}
+                        onChange={(e) => setFontTarget(e.target.value as any)}
+                        className="bg-transparent text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Entire CV</option>
+                        <option value="name">Candidate Name</option>
+                        <option value="headings">Section Headings</option>
+                        <option value="body">Body / Bullet Text</option>
+                      </select>
+                    </div>
+
+                    <div className="h-4 w-px bg-gray-200 dark:bg-zinc-700 hidden sm:block" />
+
+                    {/* Font Family Selector with Live preview */}
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={currentFontFamily}
+                        onChange={(e) => handleWordFontFamilyChange(e.target.value)}
+                        className="bg-gray-50 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-xs font-medium rounded-lg px-2.5 py-1.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[190px] truncate"
+                      >
+                        {FONT_OPTIONS.map((f) => (
+                          <option key={f.id} value={f.id} style={{ fontFamily: f.id }}>
+                            {f.label} ({f.category})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Font Size & Grow / Shrink Steppers */}
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={currentActiveFontSize}
+                        onChange={(e) => handleWordFontSizeChange(parseFloat(e.target.value))}
+                        className="bg-gray-50 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-xs font-bold rounded-lg px-2 py-1.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer w-[68px] text-center"
+                      >
+                        {[7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 32, 36].map((s) => (
+                          <option key={s} value={s}>
+                            {s} pt
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Grow Font Button: A▲ */}
+                      <button
+                        type="button"
+                        title="Increase Font Size (Grow Font)"
+                        onClick={handleGrowFont}
+                        className="flex items-center justify-center gap-0.5 px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-gray-300 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 font-bold hover:scale-105 active:scale-95 transition-all shadow-xs"
+                      >
+                        <span>A</span>
+                        <span className="text-[9px] text-blue-600 dark:text-blue-400">▲</span>
+                      </button>
+
+                      {/* Shrink Font Button: A▼ */}
+                      <button
+                        type="button"
+                        title="Decrease Font Size (Shrink Font)"
+                        onClick={handleShrinkFont}
+                        className="flex items-center justify-center gap-0.5 px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-gray-300 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 font-bold hover:scale-105 active:scale-95 transition-all shadow-xs"
+                      >
+                        <span className="text-[11px]">A</span>
+                        <span className="text-[9px] text-red-500 dark:text-red-400">▼</span>
+                      </button>
+                    </div>
+
+                    <div className="h-4 w-px bg-gray-200 dark:bg-zinc-700 hidden sm:block" />
+
+                    {/* Line Spacing */}
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={currentLineHeight}
+                        onChange={(e) => handleLineHeightChange(parseFloat(e.target.value))}
+                        className="bg-gray-50 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 text-gray-900 dark:text-zinc-100 focus:outline-none cursor-pointer"
+                      >
+                        <option value={1.15}>Spacing: 1.15</option>
+                        <option value={1.35}>Spacing: 1.35</option>
+                        <option value={1.45}>Spacing: 1.45</option>
+                        <option value={1.6}>Spacing: 1.6</option>
+                      </select>
+                    </div>
+
+                    {/* Reset Button */}
+                    <button
+                      type="button"
+                      title="Reset Typography Overrides"
+                      onClick={handleResetTypography}
+                      className="ml-auto text-[11px] text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 font-medium hover:underline flex items-center gap-1"
+                    >
+                      <span>↺</span>
+                      <span className="hidden md:inline">Reset Fonts</span>
+                    </button>
+                  </div>
+
+                  <TemplateCVRenderer
+                    analysis={analysis}
+                    singletonValues={renderSingleton}
+                    entries={renderEntries}
+                    photoUrl={photoUrl || undefined}
+                    styleOverrides={styleOverrides}
+                    layoutType={layoutType}
+                    layoutOverrides={layoutOverrides}
+                    customLayout={customLayout ?? undefined}
+                    zoom={cvZoom}
+                    isPrintRoot={true}
+                  />
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-6 shadow-sm">
+                  <h4 className="font-semibold text-gray-900 dark:text-zinc-100 mb-3">{t.templates.generatedCv}</h4>
+                  <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-zinc-300 font-mono leading-relaxed">
+                    {generatedCv}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <p className="text-red-700 dark:text-red-300 text-sm">{error}</p>
+        </div>
+      )}
+    </div>
+  );
+}
