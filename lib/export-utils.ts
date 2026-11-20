@@ -561,15 +561,6 @@ function buildTwoColumnDocx(
     placement.sidebar.length > 0 ? placement.sidebar : placement.left;
   const mainSections =
     placement.main.length > 0 ? placement.main : placement.right;
-  const allSidebar = sidebarSections.filter(
-    (id) =>
-      renderSection(id, true).length > 0 ||
-      analysis.sections.find((s) => s.id === id)?.repeatable === true,
-  );
-  const allMain = mainSections.filter(
-    (id) => renderSection(id, false).length > 0,
-  );
-
   const leftCells: Paragraph[] = [];
   sidebarSections.forEach((id) => leftCells.push(...renderSection(id, true)));
   const rightCells: Paragraph[] = [];

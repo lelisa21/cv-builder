@@ -51,20 +51,6 @@ export interface ResolvedComponentStyle {
   headerBand: boolean;
 }
 
-const spec = (
-  t: Partial<ResolvedTypographySpec> | undefined,
-  fallback: ResolvedTypographySpec,
-): ResolvedTypographySpec => ({
-  family: t?.family || fallback.family,
-  size: t?.size || fallback.size,
-  weight: t?.weight || fallback.weight,
-  letterSpacing: t?.letterSpacing ?? fallback.letterSpacing,
-  textTransform: t?.textTransform || fallback.textTransform,
-  lineHeight: t?.lineHeight || fallback.lineHeight,
-});
-
-const familyOf = (style: TemplateStyle): string => style.fontFamily || 'Inter, sans-serif';
-
 export function resolveThemeTokens(style: TemplateStyle): ResolvedTheme {
   const theme = style.theme || {};
   const headerBand =

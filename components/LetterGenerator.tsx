@@ -46,7 +46,6 @@ import {
   saveActiveLetterId,
   saveLetterDrafts,
 } from '@/lib/letter-storage';
-import { exportLetterToPdf, exportLetterToWord } from '@/lib/export-utils';
 import { writeLetterWithPuterClient } from '@/lib/puter-ai';
 import LetterComposer from '@/components/letters/LetterComposer';
 import LetterLibrary from '@/components/letters/LetterLibrary';
@@ -509,6 +508,7 @@ export default function LetterGenerator() {
   const handleWord = async () => {
     if (!content.trim()) return notify(tl.noContent, 'warn');
     try {
+      const { exportLetterToWord } = await import('@/lib/export-utils');
       await exportLetterToWord(content, form.applicantName, form.position, `${fileBase}.docx`, exportOptions);
       notify(tl.exportSuccess);
     } catch {
@@ -516,16 +516,21 @@ export default function LetterGenerator() {
     }
   };
 
-  const handlePdf = () => {
+  const handlePdf = async () => {
     if (!content.trim()) return notify(tl.noContent, 'warn');
-    const downloaded = exportLetterToPdf(content, `${fileBase}.pdf`, exportOptions);
-    if (!downloaded) {
-      setEditing(false);
-      setTimeout(() => window.print(), 60);
-      notify(tl.printHint);
-      return;
+    try {
+      const { exportLetterToPdf } = await import('@/lib/export-utils');
+      const downloaded = exportLetterToPdf(content, `${fileBase}.pdf`, exportOptions);
+      if (!downloaded) {
+        setEditing(false);
+        setTimeout(() => window.print(), 60);
+        notify(tl.printHint);
+        return;
+      }
+      notify(tl.exportSuccess);
+    } catch {
+      notify(tl.validationError, 'warn');
     }
-    notify(tl.exportSuccess);
   };
 
   const handleTxt = () => {

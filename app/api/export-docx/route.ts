@@ -8,7 +8,7 @@ import {
   BorderStyle,
   convertInchesToTwip,
 } from 'docx';
-import { TemplateAnalysis, TemplateStyle } from '@/types';
+import { TemplateAnalysis } from '@/types';
 
 function cleanFontName(fontStr?: string): string {
   if (!fontStr) return 'Arial';
@@ -31,7 +31,7 @@ function cleanBulletText(text: string): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { type, analysis, singletonValues, entries, styleOverrides, filename, content, applicantName, jobTitle } = body;
+    const { type, analysis, singletonValues, entries, styleOverrides, filename, content } = body;
 
     let doc: Document;
 

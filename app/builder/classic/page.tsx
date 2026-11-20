@@ -1,11 +1,13 @@
-import type { Metadata } from 'next';
+import { createPageMetadata } from '@/lib/site-url';
 import Link from 'next/link';
 import CVBuilder from '@/components/forms/CVBuilder';
 
-export const metadata: Metadata = {
-  title: 'Classic builder',
-  description: 'The original CV builder in CV Studio by BikatTech, preserved for existing documents and workflows.',
-};
+export const metadata = createPageMetadata(
+  'Classic CV Builder',
+  'The original CV builder in CV Studio by BikatTech, preserved for existing documents and workflows.',
+  '/builder/classic',
+  { index: false, follow: false },
+);
 
 export default function ClassicBuilderPage() {
   return (

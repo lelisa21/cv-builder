@@ -62,13 +62,13 @@ export default function Footer() {
             <p className="text-sm text-[var(--muted)] leading-relaxed">{t.brand.category}</p>
             <ul className="space-y-2 text-sm text-[var(--muted)]">
               <li>
-                <a href="https://github.com/shBikatTech" className="hover:text-[var(--brand)]" target="_blank" rel="noreferrer">
+                <a href="https://github.com/BikatTech" className="hover:text-[var(--brand)]" target="_blank" rel="noreferrer">
                   GitHub
                 </a>
               </li>
               <li>
                 <a
-                  href="https://www.linkedin.com/in/BikatTech-shashura-4935a2259/"
+                  href="https://www.linkedin.com/company/bikattech/"
                   className="hover:text-[var(--brand)]"
                   target="_blank"
                   rel="noreferrer"
@@ -77,7 +77,7 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a href="mailto:BikatTechshashura@gmail.com" className="hover:text-[var(--brand)]">
+                <a href="mailto:bikatech@gmail.com" className="hover:text-[var(--brand)]">
                   Email
                 </a>
               </li>

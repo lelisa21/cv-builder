@@ -19,7 +19,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Navbar />
+      <Navbar key={pathname} />
       <main className="flex-1">{children}</main>
       <Footer />
     </>

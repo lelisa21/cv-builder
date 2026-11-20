@@ -2,15 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth, UserProfileData } from '@/lib/AuthContext';
-import { useApp } from '@/lib/AppContext';
+import { useAuth, UserProfileData, SavedCvDocument } from '@/lib/AuthContext';
 import { Button } from '@/components/ui';
 import AuthModal from '@/components/auth/AuthModal';
 
 export default function ProfilePage() {
   const router = useRouter();
   const { user, profile, loading, updateProfile, savedCvs, deleteCvFromCloud, signOut } = useAuth();
-  const { t } = useApp();
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'saved_cvs'>('profile');
@@ -37,8 +35,10 @@ export default function ProfilePage() {
   const [techSkillsInput, setTechSkillsInput] = useState('');
   const [softSkillsInput, setSoftSkillsInput] = useState('');
 
+  // The account record arrives asynchronously and seeds this editable draft.
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData(profile);
       setTechSkillsInput((profile.skills?.technical || []).join(', '));
       setSoftSkillsInput((profile.skills?.soft || []).join(', '));
@@ -90,50 +90,7 @@ export default function ProfilePage() {
     }));
   };
 
-  const handleAddExperience = () => {
-    setFormData((prev) => ({
-      ...prev,
-      experience: [
-        ...(prev.experience || []),
-        {
-          company: '',
-          position: '',
-          duration: '',
-          responsibilities: [],
-        },
-      ],
-    }));
-  };
-
-  const handleRemoveExperience = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      experience: (prev.experience || []).filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleAddProject = () => {
-    setFormData((prev) => ({
-      ...prev,
-      projects: [
-        ...(prev.projects || []),
-        {
-          name: '',
-          description: '',
-          technologies: [],
-        },
-      ],
-    }));
-  };
-
-  const handleRemoveProject = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      projects: (prev.projects || []).filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleOpenCvInBuilder = (cv: any) => {
+  const handleOpenCvInBuilder = (cv: SavedCvDocument) => {
     router.push(`/builder?template=${cv.templateId || 'corporate-navy'}`);
   };
 

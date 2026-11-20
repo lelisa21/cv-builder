@@ -72,12 +72,15 @@ function Photo({ basics, design, className }: { basics: ResumeBasics; design: De
   const radius =
     design.layout.photoShape === 'circle' ? '50%' : design.layout.photoShape === 'rounded' ? '16px' : '0';
   return (
-    <img
-      src={basics.photo}
-      alt={basics.name ? `${basics.name} portrait` : 'Portrait'}
-      className={`rs-photo ${className || ''}`}
-      style={{ width: design.layout.photoSize, height: design.layout.photoSize, borderRadius: radius }}
-    />
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element -- Preserve user-provided photo data URLs for print and export. */}
+      <img
+        src={basics.photo}
+        alt={basics.name ? `${basics.name} portrait` : 'Portrait'}
+        className={`rs-photo ${className || ''}`}
+        style={{ width: design.layout.photoSize, height: design.layout.photoSize, borderRadius: radius }}
+      />
+    </>
   );
 }
 

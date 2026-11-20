@@ -30,48 +30,6 @@ const templates = [
   },
 ];
 
-function IconMonitor() {
-  return (
-    <svg className="arch-icon" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8 20h8M12 16v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconDatabase() {
-  return (
-    <svg className="arch-icon" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function IconCloud() {
-  return (
-    <svg className="arch-icon" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M7.5 18h9.2A4.3 4.3 0 0 0 21 13.8a4.2 4.2 0 0 0-3.8-4.2A6 6 0 0 0 6.2 11.1 3.8 3.8 0 0 0 7.5 18Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconPdf() {
-  return (
-    <svg className="arch-icon" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8.5 16.5h2.2a1.6 1.6 0 0 0 0-3.2H8.5V12m5 4.5V12h2.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function FeatIcon({ d }: { d: string }) {
   return (
     <span className="feat-icon" aria-hidden>

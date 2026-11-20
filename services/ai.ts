@@ -1,4 +1,5 @@
 import { UserProfile, JobDescription, JobMatchResult, JobAnalysis, LanguageCode, TemplateAnalysis } from '@/types';
+import { heuristicSemanticJobMatch } from '@/lib/job-analysis';
 
 export class AIService {
   private static instance: AIService;
@@ -13,6 +14,7 @@ export class AIService {
   }
 
   generateProfessionalSummary(profile: UserProfile, _language: LanguageCode = 'en'): string {
+    void _language;
     const { education, skills, experience, internships, projects } = profile;
     
     const latestEducation = education[0];
@@ -197,7 +199,6 @@ export class AIService {
       ...profile.skills.languages,
     ].join(' ');
 
-    const { heuristicSemanticJobMatch } = require('@/lib/job-analysis');
     const result = heuristicSemanticJobMatch(
       {
         position: jobDescription.position,
@@ -688,6 +689,7 @@ ${name}
   }
 
   async analyzeTemplate(_imageBase64: string, _language: LanguageCode = 'en'): Promise<TemplateAnalysis> {
+    void _language;
     await new Promise((resolve) => setTimeout(resolve, 1800));
 
     const analyses: TemplateAnalysis[] = [
@@ -799,6 +801,7 @@ ${name}
     hasPhoto: boolean,
     _language: LanguageCode = 'en',
   ): string {
+    void _language;
     const lines: string[] = [];
     const { layout, sections } = analysis;
 

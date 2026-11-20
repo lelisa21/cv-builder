@@ -15,7 +15,8 @@ const Navbar: React.FC = () => {
   const { user, profile, signOut } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpenFor, setMobileOpenFor] = useState<string | null>(null);
+  const mobileOpen = mobileOpenFor === pathname;
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   const links = [
@@ -45,10 +46,6 @@ const Navbar: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [userMenuOpen]);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
 
   const displayName =
     profile?.fullName?.trim() ||
@@ -81,7 +78,12 @@ const Navbar: React.FC = () => {
 
             <div className="hidden lg:flex items-center gap-0.5">
               {links.map((link) => (
-                <Link key={link.href} href={link.href} className={linkClass(link.href)}>
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={linkClass(link.href)}
+                  onClick={() => setMobileOpenFor(null)}
+                >
                   {link.label}
                 </Link>
               ))}
@@ -182,9 +184,9 @@ const Navbar: React.FC = () => {
               <button
                 type="button"
                 className="lg:hidden p-2 rounded-full border border-[var(--line)]"
-                aria-label="Open menu"
+                aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={mobileOpen}
-                onClick={() => setMobileOpen((v) => !v)}
+                onClick={() => setMobileOpenFor(mobileOpen ? null : pathname)}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {mobileOpen ? (
@@ -200,7 +202,12 @@ const Navbar: React.FC = () => {
           {mobileOpen && (
             <div className="lg:hidden pb-4 flex flex-col gap-1">
               {links.map((link) => (
-                <Link key={link.href} href={link.href} className={linkClass(link.href)}>
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={linkClass(link.href)}
+                  onClick={() => setMobileOpenFor(null)}
+                >
                   {link.label}
                 </Link>
               ))}

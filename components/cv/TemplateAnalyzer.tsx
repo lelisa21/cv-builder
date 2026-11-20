@@ -11,10 +11,13 @@ import { CustomLayout, defaultCustomLayout, validateLayout } from '@/lib/layout-
 import { TemplateAnalysis, TemplateField, TemplatePhotoCrop, TemplateSection, TemplateStyle } from '@/types';
 import { resizeDataUrl } from '@/lib/image-utils';
 import { applySampledColors, extractPalette } from '@/lib/palette';
-import { exportToWord, exportToImage, exportToPdfDownload, exportToPdf } from '@/lib/export-utils';
 import { analyzeWithPuterClient, writeCvWithPuterClient } from '@/lib/puter-ai';
 
 type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'generated';
+type HeaderPlacement = NonNullable<TemplateAnalysis['layout']['headerPlacement']>;
+type BulletStyle = NonNullable<TemplateStyle['bulletStyle']>;
+type HeadingVariant = NonNullable<TemplateStyle['headingVariant']>;
+type FontTarget = 'all' | 'name' | 'headings' | 'body';
 
 interface EntryGroup {
   id: string;
@@ -111,7 +114,7 @@ export default function TemplateAnalyzer() {
   const [refinedSingleton, setRefinedSingleton] = useState<Record<string, string> | null>(null);
   const [refinedEntries, setRefinedEntries] = useState<Record<string, Array<Record<string, string>>> | null>(null);
   const [useRewrites, setUseRewrites] = useState(true);
-  const [fontTarget, setFontTarget] = useState<'all' | 'name' | 'headings' | 'body'>('all');
+  const [fontTarget, setFontTarget] = useState<FontTarget>('all');
 
   const currentFontFamily = useMemo(() => {
     const styleNow = {
@@ -658,10 +661,11 @@ export default function TemplateAnalyzer() {
     const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
     const filename = `${name.replace(/\s+/g, '_')}_CV.pdf`;
     try {
+      const { exportToPdfDownload } = await import('@/lib/export-utils');
       await exportToPdfDownload('cv-print-root', filename);
     } catch (err) {
       console.error('Direct PDF export failed, fallback to print:', err);
-      exportToPdf();
+      window.print();
     }
   };
 
@@ -669,6 +673,7 @@ export default function TemplateAnalyzer() {
     if (!analysis) return;
     const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
     const filename = `${name.replace(/\s+/g, '_')}_CV.docx`;
+    const { exportToWord } = await import('@/lib/export-utils');
     await exportToWord(analysis, renderSingleton, renderEntries, filename, styleOverrides);
   };
 
@@ -676,6 +681,7 @@ export default function TemplateAnalyzer() {
     if (!analysis) return;
     const name = renderSingleton.fullName || renderSingleton.name || renderSingleton.full_name || 'My_CV';
     const filename = `${name.replace(/\s+/g, '_')}_CV.png`;
+    const { exportToImage } = await import('@/lib/export-utils');
     await exportToImage('cv-print-root', filename);
   };
 
@@ -888,7 +894,7 @@ export default function TemplateAnalyzer() {
               onChange={(e) =>
                 setLayoutOverrides((prev) => ({
                   ...prev,
-                  headerPlacement: e.target.value as any,
+                  headerPlacement: e.target.value as HeaderPlacement,
                 }))
               }
             >
@@ -951,7 +957,7 @@ export default function TemplateAnalyzer() {
               onChange={(e) =>
                 setStyleOverrides((prev) => ({
                   ...prev,
-                  bulletStyle: e.target.value as any,
+                  bulletStyle: e.target.value as BulletStyle,
                 }))
               }
             >
@@ -973,7 +979,7 @@ export default function TemplateAnalyzer() {
               onChange={(e) =>
                 setStyleOverrides((prev) => ({
                   ...prev,
-                  headingVariant: e.target.value as any,
+                  headingVariant: e.target.value as HeadingVariant,
                 }))
               }
             >
@@ -1642,7 +1648,7 @@ export default function TemplateAnalyzer() {
                       <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-zinc-500">Target</span>
                       <select
                         value={fontTarget}
-                        onChange={(e) => setFontTarget(e.target.value as any)}
+                        onChange={(e) => setFontTarget(e.target.value as FontTarget)}
                         className="bg-transparent text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-none cursor-pointer"
                       >
                         <option value="all">Entire CV</option>

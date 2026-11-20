@@ -346,7 +346,6 @@ export default function TemplateCVRenderer({
   ) => {
     const fields = analysis.fields.filter((f) => f.section === sectionId && !skipFieldIds.has(f.id));
     const fg = rail ? sidebarBodyFg : theme.textColor;
-    const font = rail ? typo.sidebarText.family : typo.body.family;
     const size = rail ? typo.sidebarText.size : typo.body.size;
     const lh = rail ? typo.sidebarText.lineHeight : typo.body.lineHeight;
     const char = BULLET_CHAR[cs.bulletStyle] || '•';

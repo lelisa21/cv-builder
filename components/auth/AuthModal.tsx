@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { Button } from '@/components/ui';
 
 interface AuthModalProps {
   isOpen: boolean;

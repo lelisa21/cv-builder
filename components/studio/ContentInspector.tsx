@@ -137,7 +137,10 @@ function BasicsEditor() {
         <span className="field-label">Portrait</span>
         <div className="photo-drop">
           {doc.basics.photo ? (
-            <img src={doc.basics.photo} alt="" className="photo-preview" />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- User photos are local data URLs. */}
+              <img src={doc.basics.photo} alt="" className="photo-preview" />
+            </>
           ) : (
             <span className="photo-preview photo-preview--empty">
               <Icon name="user" size={18} />

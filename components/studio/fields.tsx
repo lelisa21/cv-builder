@@ -133,6 +133,8 @@ export function ColorField({
   onChange: (value: string) => void;
 }) {
   const [text, setText] = useState(value);
+  // Keep the in-progress color text aligned when its source value changes externally.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setText(value), [value]);
   return (
     <div className="field">
@@ -173,7 +175,9 @@ export function TagsField({
   const [text, setText] = useState(value.join(', '));
   const joined = value.join(', ');
 
+  // Keep the draft tags aligned when the source list changes externally.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setText(joined);
   }, [joined]);
 

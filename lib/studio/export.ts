@@ -83,7 +83,6 @@ export async function exportPng(doc: ResumeDocument): Promise<number> {
   const canvases: HTMLCanvasElement[] = [];
   for (const sheet of sheets) {
     // Capture sequentially so the layout stays stable between pages.
-    // eslint-disable-next-line no-await-in-loop
     canvases.push(await captureSheet(sheet));
   }
   const width = Math.max(...canvases.map((canvas) => canvas.width));

@@ -3,7 +3,6 @@ import { parseUserAgent } from '@/lib/device-detection';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
     const userAgent = req.headers.get('user-agent') || '';
     const devInfo = parseUserAgent(userAgent);
 
@@ -30,7 +29,7 @@ export async function POST(req: NextRequest) {
           if (geo.country_name || geo.country) country = geo.country_name || geo.country;
           if (geo.region) region = geo.region;
         }
-      } catch (e) {
+      } catch {
         // secondary fallback for IP only if geo provider is rate limited
         if (isLocalhost) {
           try {
@@ -58,9 +57,9 @@ export async function POST(req: NextRequest) {
       os: devInfo.os,
       timestamp: new Date().toISOString(),
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { error: err?.message || 'Failed to detect session metadata' },
+      { error: err instanceof Error ? err.message : 'Failed to detect session metadata' },
       { status: 500 }
     );
   }

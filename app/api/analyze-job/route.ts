@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
     
     const parsed = JSON.parse(jsonMatch[0]);
-    const result = sanitizeJobMatchResult(parsed, jobObj, profileText);
+    const result = sanitizeJobMatchResult(parsed);
     return NextResponse.json({ mock: false, ...result });
   } catch (err) {
     console.error('[analyze-job-api]', err);

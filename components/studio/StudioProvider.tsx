@@ -232,6 +232,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initial = readInitialDocument();
     docRef.current = initial;
+    // Hydration deliberately replaces the server-safe sample with browser storage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDoc(initial);
     if (initial.sections.length) setSelection('basics');
     setHydrated(true);
@@ -240,6 +242,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // Debounced local autosave.
   useEffect(() => {
     if (!hydrated) return;
+    // Autosave status mirrors the debounced local-storage write below.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveState('saving');
     const timer = window.setTimeout(() => {
       try {
@@ -794,6 +798,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // Keep the selection valid after deleting a section.
   useEffect(() => {
     if (selection === 'basics') return;
+    // A deleted section cannot remain selected in the inspector.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!doc.sections.some((section) => section.id === selection)) setSelection('basics');
   }, [doc.sections, selection]);
 

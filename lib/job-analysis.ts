@@ -1,5 +1,32 @@
 import { JobAnalysis, JobMatchResult, JobMatchAnalysisDetail } from '@/types';
 
+type JsonRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): JsonRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
+
+const asString = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' && value.trim() ? value : fallback;
+
+const asStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(String) : [];
+
+const isOneOf = <T extends string>(value: unknown, options: readonly T[]): value is T =>
+  typeof value === 'string' && options.some((option) => option === value);
+
+export interface SanitizedJobMatchResult {
+  analysis: JobAnalysis;
+  matchResult: JobMatchResult;
+  atsResult: {
+    atsScore: number;
+    keywordSuggestions: string[];
+    structureSuggestions: string[];
+    contentSuggestions: string[];
+  };
+}
+
 /**
  * Builds a prompt for the AI Senior Recruiter & Career Advisor.
  */
@@ -90,97 +117,65 @@ Respond with ONLY a valid, parseable JSON object matching this exact TypeScript 
 /**
  * Sanitizes and normalizes the parsed JSON output from the AI.
  */
-export function sanitizeJobMatchResult(
-  parsed: any,
-  jobFallback?: { position: string; company: string; requirements: string[] },
-  profileFallbackText?: string
-): {
-  analysis: JobAnalysis;
-  matchResult: JobMatchResult;
-  atsResult: {
-    atsScore: number;
-    keywordSuggestions: string[];
-    structureSuggestions: string[];
-    contentSuggestions: string[];
-  };
-} {
+export function sanitizeJobMatchResult(parsed: unknown): SanitizedJobMatchResult {
+  const result = asRecord(parsed);
+  const parsedAnalysis = asRecord(result.jobAnalysis);
+  const domainMatch = asRecord(result.domainMatch);
   const jobAnalysis: JobAnalysis = {
-    requiredEducation: Array.isArray(parsed?.jobAnalysis?.requiredEducation)
-      ? parsed.jobAnalysis.requiredEducation.map(String)
-      : [],
-    requiredTechnicalSkills: Array.isArray(parsed?.jobAnalysis?.requiredTechnicalSkills)
-      ? parsed.jobAnalysis.requiredTechnicalSkills.map(String)
-      : [],
-    preferredTechnicalSkills: Array.isArray(parsed?.jobAnalysis?.preferredTechnicalSkills)
-      ? parsed.jobAnalysis.preferredTechnicalSkills.map(String)
-      : [],
-    requiredExperience: Array.isArray(parsed?.jobAnalysis?.requiredExperience)
-      ? parsed.jobAnalysis.requiredExperience.map(String)
-      : [],
-    softSkills: Array.isArray(parsed?.jobAnalysis?.softSkills)
-      ? parsed.jobAnalysis.softSkills.map(String)
-      : [],
-    keywords: Array.isArray(parsed?.jobAnalysis?.keywords)
-      ? parsed.jobAnalysis.keywords.map(String)
-      : [],
+    requiredEducation: asStringArray(parsedAnalysis.requiredEducation),
+    requiredTechnicalSkills: asStringArray(parsedAnalysis.requiredTechnicalSkills),
+    preferredTechnicalSkills: asStringArray(parsedAnalysis.preferredTechnicalSkills),
+    requiredExperience: asStringArray(parsedAnalysis.requiredExperience),
+    softSkills: asStringArray(parsedAnalysis.softSkills),
+    keywords: asStringArray(parsedAnalysis.keywords),
   };
 
-  const domainMatch = parsed?.domainMatch || {};
   const domainStatus: 'match' | 'partial' | 'mismatch' =
-    domainMatch.status === 'match' || domainMatch.status === 'partial' || domainMatch.status === 'mismatch'
+    isOneOf(domainMatch.status, ['match', 'partial', 'mismatch'])
       ? domainMatch.status
       : 'partial';
 
-  const rawMatchScore = typeof parsed?.matchScore === 'number' ? Math.round(parsed.matchScore) : 50;
+  const rawMatchScore = typeof result.matchScore === 'number' ? Math.round(result.matchScore) : 50;
   const matchScore = Math.max(5, Math.min(99, rawMatchScore));
 
-  const rawAtsScore = typeof parsed?.atsScore === 'number' ? Math.round(parsed.atsScore) : matchScore;
+  const rawAtsScore = typeof result.atsScore === 'number' ? Math.round(result.atsScore) : matchScore;
   const atsScore = Math.max(5, Math.min(100, rawAtsScore));
 
-  const comparisonDetails: JobMatchAnalysisDetail[] = Array.isArray(parsed?.comparisonDetails)
-    ? parsed.comparisonDetails.map((item: any) => ({
-        category: item?.category || 'skills',
-        title: String(item?.title || 'Criteria'),
-        status: (item?.status === 'match' || item?.status === 'partial' || item?.status === 'mismatch')
+  const comparisonDetails: JobMatchAnalysisDetail[] = Array.isArray(result.comparisonDetails)
+    ? result.comparisonDetails.map((value) => {
+        const item = asRecord(value);
+        return {
+        category: isOneOf(item.category, ['domain', 'experience', 'education', 'skills', 'culture'])
+          ? item.category
+          : 'skills',
+        title: asString(item.title, 'Criteria'),
+        status: isOneOf(item.status, ['match', 'partial', 'mismatch'])
           ? item.status
           : 'partial',
-        candidateValue: String(item?.candidateValue || 'Not specified'),
-        requiredValue: String(item?.requiredValue || 'Not specified'),
-        commentary: String(item?.commentary || ''),
-      }))
+        candidateValue: asString(item.candidateValue, 'Not specified'),
+        requiredValue: asString(item.requiredValue, 'Not specified'),
+        commentary: asString(item.commentary),
+      };
+      })
     : [];
 
-  const matchedTech = Array.isArray(parsed?.matchedTechnicalSkills)
-    ? parsed.matchedTechnicalSkills.map(String)
-    : [];
-  const matchedEdu = Array.isArray(parsed?.matchedEducation)
-    ? parsed.matchedEducation.map(String)
-    : [];
-  const matchedExp = Array.isArray(parsed?.matchedExperience)
-    ? parsed.matchedExperience.map(String)
-    : [];
-  const missingReqs = Array.isArray(parsed?.missingRequirements)
-    ? parsed.missingRequirements.map(String)
-    : [];
-  const transferable = Array.isArray(parsed?.transferableSkills)
-    ? parsed.transferableSkills.map(String)
-    : [];
-  const advice = Array.isArray(parsed?.recruiterAdvice)
-    ? parsed.recruiterAdvice.map(String)
-    : [];
-  const atsTips = Array.isArray(parsed?.atsOptimizationTips)
-    ? parsed.atsOptimizationTips.map(String)
-    : [];
+  const matchedTech = asStringArray(result.matchedTechnicalSkills);
+  const matchedEdu = asStringArray(result.matchedEducation);
+  const matchedExp = asStringArray(result.matchedExperience);
+  const missingReqs = asStringArray(result.missingRequirements);
+  const transferable = asStringArray(result.transferableSkills);
+  const advice = asStringArray(result.recruiterAdvice);
+  const atsTips = asStringArray(result.atsOptimizationTips);
 
   const matchResult: JobMatchResult = {
     matchScore,
     atsScore,
-    verdictTitle: parsed?.verdictTitle || (matchScore >= 70 ? 'Strong Candidate Alignment' : matchScore >= 45 ? 'Moderate Compatibility' : 'Domain & Skill Gap Identified'),
-    verdictSummary: parsed?.verdictSummary || 'Detailed comparison between your profile and the vacancy requirements.',
+    verdictTitle: asString(result.verdictTitle, matchScore >= 70 ? 'Strong Candidate Alignment' : matchScore >= 45 ? 'Moderate Compatibility' : 'Domain & Skill Gap Identified'),
+    verdictSummary: asString(result.verdictSummary, 'Detailed comparison between your profile and the vacancy requirements.'),
     domainMatchStatus: domainStatus,
-    jobDomain: domainMatch.jobDomain || 'Target Field',
-    candidateDomain: domainMatch.candidateDomain || 'Candidate Discipline',
-    domainExplanation: domainMatch.explanation || '',
+    jobDomain: asString(domainMatch.jobDomain, 'Target Field'),
+    candidateDomain: asString(domainMatch.candidateDomain, 'Candidate Discipline'),
+    domainExplanation: asString(domainMatch.explanation),
     matchedQualifications: matchedEdu,
     matchedTechnicalSkills: matchedTech,
     matchedExperience: matchedExp,
@@ -373,7 +368,9 @@ export function heuristicSemanticJobMatch(
     jobDomain: domainNames[topJDomain],
     candidateDomain: domainNames[topCDomain],
     domainExplanation: verdictSummary,
-    matchedQualifications: analysis.requiredEducation.filter(e => pLower.includes('degree') || pLower.includes('bsc')),
+    matchedQualifications: analysis.requiredEducation.filter((requirement) =>
+      pLower.includes(requirement.toLowerCase()),
+    ),
     matchedTechnicalSkills: matchedTech,
     matchedExperience: analysis.requiredExperience.length > 0 && Number(cExpYears) > 0 ? [`${cExpYears} years background`] : [],
     matchedEducation: analysis.requiredEducation.slice(0, 1),

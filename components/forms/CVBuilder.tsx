@@ -6,10 +6,10 @@ import { useApp } from '@/lib/AppContext';
 import { useAuth, SavedCvDocument } from '@/lib/AuthContext';
 import TemplateCVRenderer from '@/components/cv/TemplateCVRenderer';
 import { STATIC_TEMPLATES, StaticTemplateDefinition } from '@/lib/static-templates';
-import { exportToPdf, exportToPdfDownload, exportToWord, exportToImage } from '@/lib/export-utils';
-import { TemplateField, TemplateSection, TemplateStyle } from '@/types';
+import { TemplateStyle } from '@/types';
 
 type CategoryFilter = 'All' | 'Executive' | 'Corporate' | 'Tech' | 'Academic' | 'Minimalist';
+type FontTarget = 'all' | 'name' | 'headings' | 'body';
 
 interface PresetPalette {
   name: string;
@@ -84,7 +84,7 @@ export default function CVBuilder() {
   const [entries, setEntries] = useState<Record<string, Array<Record<string, string>>>>({});
   const [photoUrl, setPhotoUrl] = useState<string>('');
 
-  const { user, profile, savedCvs, saveCvToCloud, deleteCvFromCloud, isConfigured } = useAuth();
+  const { user, profile, savedCvs, saveCvToCloud, deleteCvFromCloud } = useAuth();
 
   // UI state
   const [activeSectionId, setActiveSectionId] = useState<string>('personal');
@@ -94,7 +94,7 @@ export default function CVBuilder() {
   const [mobilePane, setMobilePane] = useState<'split' | 'editor' | 'preview' | 'templates'>('split');
   const [styleOverrides, setStyleOverrides] = useState<Partial<TemplateStyle>>({});
   const [fontScale, setFontScale] = useState<'compact' | 'standard' | 'spacious'>('standard');
-  const [fontTarget, setFontTarget] = useState<'all' | 'name' | 'headings' | 'body'>('all');
+  const [fontTarget, setFontTarget] = useState<FontTarget>('all');
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportMessage, setExportMessage] = useState<string>('');
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
@@ -163,6 +163,8 @@ export default function CVBuilder() {
       const tplParam = params.get('template');
       const found = tplParam ? STATIC_TEMPLATES.find((t) => t.id === tplParam) : STATIC_TEMPLATES[0];
       if (found) {
+        // URL parameters initialize the selected template once on mount.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         handleSelectTemplate(found, true);
       }
     }
@@ -383,7 +385,12 @@ export default function CVBuilder() {
 
   const handleResetTypography = () => {
     setStyleOverrides((prev) => {
-      const { fontFamily, bodySize, headingSize, nameSize, typography, ...rest } = prev;
+      const rest = { ...prev };
+      delete rest.fontFamily;
+      delete rest.bodySize;
+      delete rest.headingSize;
+      delete rest.nameSize;
+      delete rest.typography;
       return rest;
     });
     setFontScale('standard');
@@ -483,6 +490,7 @@ export default function CVBuilder() {
     setExportMessage('Generating native Word (.docx) document...');
     try {
       const filename = `${(singletonValues.fullName || 'My_CV').replace(/\s+/g, '_')}_CV.docx`;
+      const { exportToWord } = await import('@/lib/export-utils');
       await exportToWord(selectedTemplate.analysis, singletonValues, entries, filename, styleOverrides);
     } catch (err) {
       console.error('Word export failed:', err);
@@ -499,6 +507,7 @@ export default function CVBuilder() {
     setExportMessage('Rendering high-resolution A4 image...');
     try {
       const filename = `${(singletonValues.fullName || 'My_CV').replace(/\s+/g, '_')}_CV.png`;
+      const { exportToImage } = await import('@/lib/export-utils');
       await exportToImage('cv-print-root', filename);
     } catch (err) {
       console.error('Image export failed:', err);
@@ -515,10 +524,11 @@ export default function CVBuilder() {
     setExportMessage('Generating high-resolution PDF document...');
     try {
       const filename = `${(singletonValues.fullName || 'My_CV').replace(/\s+/g, '_')}_CV.pdf`;
+      const { exportToPdfDownload } = await import('@/lib/export-utils');
       await exportToPdfDownload('cv-print-root', filename);
     } catch (err) {
       console.error('Direct PDF export failed, fallback to print:', err);
-      exportToPdf();
+      window.print();
     } finally {
       setIsExporting(false);
       setExportMessage('');
@@ -1428,7 +1438,7 @@ export default function CVBuilder() {
           <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-zinc-500">{tb.target}</span>
           <select
             value={fontTarget}
-            onChange={(e) => setFontTarget(e.target.value as any)}
+            onChange={(e) => setFontTarget(e.target.value as FontTarget)}
             className="bg-transparent text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-none cursor-pointer"
           >
             <option value="all">{tb.entireCv}</option>

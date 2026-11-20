@@ -41,7 +41,10 @@ export function DocumentCanvas() {
   const didFit = useRef(false);
   const lastFit = useRef<number | null>(null);
   const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   const { width: pageW, height: pageH } = pageDimensions(
     doc.design.page.format,

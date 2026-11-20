@@ -17,7 +17,8 @@ interface MenuItem {
   label: string;
   description: string;
   icon: IconName;
-  action: () => void | Promise<void>;
+  action?: () => void | Promise<void>;
+  id?: 'restore-backup';
 }
 
 export function ExportMenu() {
@@ -156,7 +157,7 @@ export function ExportMenu() {
         label: 'Restore studio backup',
         description: 'Open a .json document from disk',
         icon: 'upload',
-        action: () => fileRef.current?.click(),
+        id: 'restore-backup',
       },
     ],
     [
@@ -201,7 +202,10 @@ export function ExportMenu() {
                   type="button"
                   role="menuitem"
                   className="studio-menu-item"
-                  onClick={() => run(item.action)}
+                  onClick={() => {
+                    if (item.id === 'restore-backup') fileRef.current?.click();
+                    else if (item.action) void run(item.action);
+                  }}
                 >
                   <Icon name={item.icon} size={14} />
                   <span>

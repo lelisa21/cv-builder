@@ -190,11 +190,6 @@ export function CommandPalette() {
       `${command.label} ${command.group} ${command.hint || ''}`.toLowerCase().includes(needle),
     );
   }, [commands, query]);
-
-  useEffect(() => {
-    setActive(0);
-  }, [query]);
-
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -244,7 +239,10 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
             onKeyDown={onKeyDown}
             placeholder="Search sections, templates and commands…"
             aria-label="Search commands"

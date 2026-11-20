@@ -133,6 +133,7 @@ export function validateProjectsList(items: Project[]): FieldErrors {
 }
 
 export function validateSkills(_skills: Skills): FieldErrors {
+  void _skills;
   return {};
 }
 

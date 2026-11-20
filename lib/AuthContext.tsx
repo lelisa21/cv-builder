@@ -93,6 +93,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_PROFILE_KEY = 'BikatTechcv_local_user_profile';
 const LOCAL_SAVED_CVS_KEY = 'BikatTechcv_local_saved_cvs';
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -306,6 +308,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const local = localStorage.getItem(LOCAL_PROFILE_KEY);
         if (local) {
           try {
+            // Load the browser-only guest profile after hydration.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setProfile(JSON.parse(local));
           } catch { }
         }
@@ -364,6 +368,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, loadProfile, recordSessionAudit]);
 
   useEffect(() => {
+    // This fetch also hydrates from local storage when the guest fallback is active.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshSavedCvs();
   }, [refreshSavedCvs]);
 
@@ -377,8 +383,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: error.message };
       return { error: null };
-    } catch (err: any) {
-      return { error: err?.message || 'Sign in failed' };
+    } catch (err: unknown) {
+      return { error: errorMessage(err, 'Sign in failed') };
     }
   };
 
@@ -425,8 +431,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const needsEmailConfirmation = Boolean(data?.user && !data.session);
       return { error: null, needsEmailConfirmation };
-    } catch (err: any) {
-      return { error: err?.message || 'Sign up failed' };
+    } catch (err: unknown) {
+      return { error: errorMessage(err, 'Sign up failed') };
     }
   };
 
@@ -445,8 +451,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) return { error: error.message };
       return { error: null };
-    } catch (err: any) {
-      return { error: err?.message || 'Google sign in failed' };
+    } catch (err: unknown) {
+      return { error: errorMessage(err, 'Google sign in failed') };
     }
   };
 
@@ -475,7 +481,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (supabase && user) {
       try {
-        const payload: Record<string, any> = {
+        const payload: Record<string, unknown> = {
           id: user.id,
           updated_at: new Date().toISOString(),
         };
@@ -497,8 +503,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const { error } = await supabase.from('profiles').upsert(payload);
         if (error) return { error: error.message };
-      } catch (err: any) {
-        return { error: err?.message || 'Failed to save profile' };
+      } catch (err: unknown) {
+        return { error: errorMessage(err, 'Failed to save profile') };
       }
     }
 
@@ -556,8 +562,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data, error } = await supabase.from('saved_cvs').upsert(payload).select('id').single();
         if (error) return { id: docId, error: error.message };
         if (data?.id) newDoc.id = data.id;
-      } catch (err: any) {
-        return { id: docId, error: err?.message || 'Failed to sync with cloud' };
+      } catch (err: unknown) {
+        return { id: docId, error: errorMessage(err, 'Failed to sync with cloud') };
       }
     }
 
@@ -576,8 +582,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { error } = await supabase.from('saved_cvs').delete().eq('id', id);
         if (error) return { error: error.message };
-      } catch (err: any) {
-        return { error: err?.message || 'Failed to delete from cloud' };
+      } catch (err: unknown) {
+        return { error: errorMessage(err, 'Failed to delete from cloud') };
       }
     }
 
