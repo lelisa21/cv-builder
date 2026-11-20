@@ -18,7 +18,9 @@ import {
   ShadingType,
 } from "docx";
 import { TemplateAnalysis, TemplateStyle } from "@/types";
+import type { LetterExportOptions } from "@/types/letters";
 import { resolveLayout } from "@/lib/layout-engine";
+import { parseLetter } from "@/lib/letter-engine";
 
 /**
  * Robust, self-contained client-side file download.
@@ -1052,63 +1054,121 @@ export async function exportToWord(
 }
 
 /**
- * Exports a Cover Letter or Application Letter to native Word (.docx).
+ * Exports a cover/application/follow-up letter to a native, editable Word
+ * document. The letter is parsed into its structural parts so the sender
+ * block, date, subject, body and signature keep their visual hierarchy.
  */
 export async function exportLetterToWord(
   content: string,
   applicantName: string,
   jobTitle = "Application",
   filename = "Cover_Letter.docx",
+  options: LetterExportOptions = {},
 ): Promise<void> {
   const outName = filename.endsWith(".docx")
     ? filename
     : `${filename.replace(/\.[^/.]+$/, "")}.docx`;
 
-  // 1. Try server API download
-  try {
-    const res = await fetch("/api/export-docx", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "letter",
-        content,
-        applicantName,
-        jobTitle,
-        filename: outName,
-      }),
-    });
+  const blocks = parseLetter(content);
+  const bodyParagraphs = blocks.paragraphs.length
+    ? blocks.paragraphs
+    : content.split(/\r?\n\r?\n/).map((part) => part.trim()).filter(Boolean);
+  const fontName = options.font === "sans" ? "Calibri" : "Georgia";
+  const accent = cleanHex(options.accent || "#0c3b74");
+  const bodySize = Math.round((options.fontSize || 11) * 2);
+  const bodyAlign = options.align === "left" ? AlignmentType.LEFT : AlignmentType.JUSTIFIED;
+  const children: Paragraph[] = [];
 
-    if (res.ok) {
-      const blob = await res.blob();
-      const docxBlob = new Blob([blob], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
-      downloadBlob(docxBlob, outName);
-      return;
-    }
-  } catch (err) {
-    console.warn("Server letter docx export fallback to client:", err);
+  const addParagraph = (
+    text: string,
+    config: {
+      size?: number;
+      bold?: boolean;
+      color?: string;
+      align?: (typeof AlignmentType)[keyof typeof AlignmentType];
+      before?: number;
+      after?: number;
+      italic?: boolean;
+      rule?: boolean;
+    } = {},
+  ) => {
+    if (!text.trim()) return;
+    children.push(
+      new Paragraph({
+        alignment: config.align || AlignmentType.LEFT,
+        spacing: {
+          before: config.before ?? 0,
+          after: config.after ?? 120,
+          line: 320,
+        },
+        border: config.rule
+          ? {
+              bottom: {
+                color: accent,
+                space: 6,
+                style: BorderStyle.SINGLE,
+                size: 8,
+              },
+            }
+          : undefined,
+        children: [
+          new TextRun({
+            text: text.trim(),
+            size: config.size || bodySize,
+            bold: config.bold || false,
+            italics: config.italic || false,
+            font: fontName,
+            color: config.color || "1F2937",
+          }),
+        ],
+      }),
+    );
+  };
+
+  if (blocks.sender) {
+    addParagraph(blocks.sender, {
+      size: bodySize + 8,
+      bold: true,
+      color: accent,
+      align: AlignmentType.RIGHT,
+      after: 40,
+    });
+  }
+  if (blocks.contact) {
+    addParagraph(blocks.contact, {
+      size: bodySize - 2,
+      color: "6B7280",
+      align: AlignmentType.RIGHT,
+      after: 240,
+      rule: options.paper === "modern" || options.paper === "executive",
+    });
   }
 
-  // 2. Client-side fallback
-  const paragraphs = content
-    .split(/\r?\n\r?\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const docParagraphs: Paragraph[] = paragraphs.map((text) => {
-    return new Paragraph({
-      spacing: { before: 60, after: 120 },
-      children: [
-        new TextRun({
-          text,
-          size: 22,
-          font: "Calibri",
-          color: "1F2937",
-        }),
-      ],
+  blocks.meta.forEach((line, index) => {
+    const isDate = /(?:20\d{2}|Guyyaa:|ቀን:|Date:)/i.test(line) || index === 0;
+    addParagraph(line, {
+      align: isDate ? AlignmentType.RIGHT : AlignmentType.LEFT,
+      after: isDate ? 220 : 40,
+      color: isDate ? "6B7280" : "1F2937",
     });
   });
+
+  if (blocks.subject) {
+    addParagraph(blocks.subject, { bold: true, color: accent, after: 220 });
+  }
+  if (blocks.salutation) {
+    addParagraph(blocks.salutation, { after: 200 });
+  }
+  bodyParagraphs.forEach((paragraph) => {
+    addParagraph(paragraph, { align: bodyAlign, after: 180 });
+  });
+  if (blocks.closing) addParagraph(blocks.closing, { before: 120, after: 200 });
+  if (blocks.signature) addParagraph(blocks.signature, { bold: true, after: 0 });
+
+  if (children.length === 0) {
+    addParagraph(applicantName || jobTitle, { bold: true, size: bodySize + 6, color: accent });
+    content.split(/\r?\n/).filter(Boolean).forEach((line) => addParagraph(line));
+  }
 
   const doc = new Document({
     sections: [
@@ -1116,14 +1176,14 @@ export async function exportLetterToWord(
         properties: {
           page: {
             margin: {
-              top: convertInchesToTwip(1),
-              right: convertInchesToTwip(1),
-              bottom: convertInchesToTwip(1),
-              left: convertInchesToTwip(1),
+              top: convertInchesToTwip(0.9),
+              right: convertInchesToTwip(0.9),
+              bottom: convertInchesToTwip(0.9),
+              left: convertInchesToTwip(0.9),
             },
           },
         },
-        children: docParagraphs,
+        children,
       },
     ],
   });
@@ -1132,6 +1192,77 @@ export async function exportLetterToWord(
   const docxBlob = new Blob([rawBlob], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
-
   downloadBlob(docxBlob, outName);
+}
+
+/**
+ * Downloads a real, text-selectable PDF. Built-in PDF fonts cannot render
+ * Ethiopic script, so Amharic letters fall back to the browser print flow.
+ * Afaan Oromo uses Latin script and can use the same PDF renderer as English.
+ */
+export function exportLetterToPdf(
+  content: string,
+  filename = "Letter.pdf",
+  options: LetterExportOptions = {},
+): boolean {
+  if (options.language === "am") return false;
+  // WinAnsi covers Latin-1 plus common typographic punctuation (dashes, curly
+  // quotes, bullets). Anything outside that range needs the print fallback.
+  if (/[^\u0000-\u00FF\u2000-\u206F\u20AC\u2122]/u.test(content)) return false;
+
+  const outName = ensureExtension(
+    filename.endsWith(".pdf") ? filename : `${filename.replace(/\.[^/.]+$/, "")}.pdf`,
+    "pdf",
+  );
+  const blocks = parseLetter(content);
+  const bodyParagraphs = blocks.paragraphs.length
+    ? blocks.paragraphs
+    : content.split(/\r?\n\r?\n/).map((part) => part.trim()).filter(Boolean);
+  const accent = (options.accent || "#0c3b74").replace("#", "").slice(0, 6);
+  const rgb = [0, 2, 4].map((offset) => parseInt(accent.slice(offset, offset + 2), 16) / 255);
+  const bodySize = options.fontSize || 11;
+  const font = options.font === "sans" ? "helvetica" : "times";
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const left = 20;
+  const right = 190;
+  let cursorY = 20;
+
+  const write = (
+    text: string,
+    size = bodySize,
+    bold = false,
+    align: "left" | "right" = "left",
+    gap = 2,
+    color: [number, number, number] = [0.12, 0.18, 0.26],
+  ) => {
+    if (!text.trim()) return;
+    doc.setFont(font, bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(Math.round(color[0] * 255), Math.round(color[1] * 255), Math.round(color[2] * 255));
+    const lines = doc.splitTextToSize(text.trim(), right - left) as string[];
+    const lineHeight = size * 0.42;
+    lines.forEach((line) => {
+      if (cursorY > 268) {
+        doc.addPage();
+        cursorY = 20;
+      }
+      doc.text(line, align === "right" ? right : left, cursorY, {
+        align: align === "right" ? "right" : "left",
+      });
+      cursorY += lineHeight;
+    });
+    cursorY += gap;
+  };
+
+  if (blocks.sender) write(blocks.sender, bodySize + 8, true, "right", 0, [rgb[0], rgb[1], rgb[2]]);
+  if (blocks.contact) write(blocks.contact, bodySize - 2, false, "right", 5);
+  blocks.meta.forEach((line, index) => write(line, bodySize - 1, false, index === 0 ? "right" : "left", 2));
+  if (blocks.subject) write(blocks.subject, bodySize, true, "left", 5, [rgb[0], rgb[1], rgb[2]]);
+  if (blocks.salutation) write(blocks.salutation, bodySize, false, "left", 5);
+  bodyParagraphs.forEach((paragraph) => write(paragraph, bodySize, false, "left", 4));
+  if (blocks.closing) write(blocks.closing, bodySize, false, "left", 5);
+  if (blocks.signature) write(blocks.signature, bodySize, true, "left", 0);
+
+  downloadBlob(doc.output("blob"), outName);
+  return true;
 }

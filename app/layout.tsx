@@ -5,6 +5,7 @@ import './globals.css';
 import './home.css';
 import './jobs.css';
 import './studio.css';
+import './letters.css';
 import { AppProvider } from '@/lib/AppContext';
 import { AuthProvider } from '@/lib/AuthContext';
 import AppChrome from '@/components/AppChrome';

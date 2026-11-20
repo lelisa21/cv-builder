@@ -1,580 +1,861 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useApp } from "@/lib/AppContext";
-import { aiService } from "@/services/ai";
-import { LanguageCode } from "@/types";
-import { exportLetterToWord } from "@/lib/export-utils";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowUp,
+  Check,
+  Copy,
+  FileDown,
+  FileText,
+  FileType2,
+  Library,
+  Mail,
+  Plus,
+  Printer,
+  Redo2,
+  Scissors,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react';
+import { useApp } from '@/lib/AppContext';
+import { useAuth } from '@/lib/AuthContext';
+import type {
+  LetterDraft,
+  LetterForm,
+  LetterFont,
+  LetterPaper,
+  LetterRewrite,
+  LetterSource,
+  QualityFix,
+} from '@/types/letters';
+import {
+  composeLetter,
+  extractRequirementsFromPosting,
+  fixLetter,
+  rewriteLetterLocally,
+} from '@/lib/letter-engine';
+import { analyzeLetter } from '@/lib/letter-quality';
+import {
+  createLetterId,
+  loadActiveLetterId,
+  loadLetterDrafts,
+  normalizeLetterDraft,
+  saveActiveLetterId,
+  saveLetterDrafts,
+} from '@/lib/letter-storage';
+import { exportLetterToPdf, exportLetterToWord } from '@/lib/export-utils';
+import { writeLetterWithPuterClient } from '@/lib/puter-ai';
+import LetterComposer from '@/components/letters/LetterComposer';
+import LetterLibrary from '@/components/letters/LetterLibrary';
+import LetterPaperView from '@/components/letters/LetterPaper';
+import LetterQualityPanel from '@/components/letters/LetterQualityPanel';
+
+type BusyMode = 'generate' | 'rewrite' | null;
+type ToastTone = 'ok' | 'warn';
+
+function today(): string {
+  const date = new Date();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function emptyForm(): LetterForm {
+  return {
+    kind: 'application',
+    tone: 'professional',
+    applicantName: 'Your Name',
+    email: '',
+    phone: '',
+    location: '',
+    linkedin: '',
+    company: '',
+    position: '',
+    recipient: '',
+    degree: '',
+    university: '',
+    skills: '',
+    experience: '',
+    projects: '',
+    requirements: [],
+    jobPosting: '',
+    includeDate: true,
+    date: today(),
+  };
+}
+
+function meaningfulForm(form: LetterForm): boolean {
+  return [
+    form.email,
+    form.phone,
+    form.location,
+    form.linkedin,
+    form.company,
+    form.position,
+    form.recipient,
+    form.degree,
+    form.university,
+    form.skills,
+    form.experience,
+    form.projects,
+    form.jobPosting,
+    ...form.requirements,
+  ].some((value) => Boolean(value.trim()));
+}
+
+function safeName(value: string): string {
+  return value.replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'Letter';
+}
+
+function downloadText(filename: string, text: string, type = 'text/plain;charset=utf-8'): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
 
 export default function LetterGenerator() {
   const { t, language, setLanguage } = useApp();
+  const { profile } = useAuth();
   const tl = t.letters;
 
-  // Settings
-  const [letterType, setLetterType] = useState<"application" | "cover">("application");
-  const [tone, setTone] = useState<"professional" | "fresh-graduate" | "modern">("professional");
+  const [form, setForm] = useState<LetterForm>(emptyForm);
+  const [content, setContent] = useState('');
+  const [title, setTitle] = useState(tl.newLetter);
+  const [drafts, setDrafts] = useState<LetterDraft[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [source, setSource] = useState<LetterSource>('local');
+  const [busy, setBusy] = useState<BusyMode>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [paper, setPaper] = useState<LetterPaper>('classic');
+  const [font, setFont] = useState<LetterFont>('serif');
+  const [accent, setAccent] = useState('#0c3b74');
+  const [fontSize, setFontSize] = useState(11);
+  const [zoom, setZoom] = useState(1);
+  const [align, setAlign] = useState<'left' | 'justify'>('justify');
+  const [past, setPast] = useState<string[]>([]);
+  const [future, setFuture] = useState<string[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
 
-  // Candidate Details
-  const [applicantName, setApplicantName] = useState("Maqaa Kee / Your Name");
-  const [email, setEmail] = useState("yourname@example.com");
-  const [phone, setPhone] = useState("+251 91 234 5678");
-  const [location, setLocation] = useState("Addis Ababa, Ethiopia");
+  const contentRef = useRef('');
+  const activeIdRef = useRef<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setLanguageRef = useRef(setLanguage);
 
-  // Job Details
-  const [company, setCompany] = useState("ABC Company");
-  const [position, setPosition] = useState("Junior Software Engineer");
-  const [recipient, setRecipient] = useState("Hiring Committee");
+  useEffect(() => {
+    setLanguageRef.current = setLanguage;
+  }, [setLanguage]);
 
-  // Background
-  const [degree, setDegree] = useState("BSc in Software Engineering");
-  const [university, setUniversity] = useState("ABC University");
-  const [skills, setSkills] = useState("Java, C++, React.js, Node.js, SQL, MongoDB, Git, Problem Solving");
-  const [experienceSummary, setExperienceSummary] = useState("Software Development Intern at ABC Company");
-  const [keyProjects, setKeyProjects] = useState("Employee Hiring System (Final Year Project) & House Rental Platform");
-  const [requirements, setRequirements] = useState("- Degree in Software Engineering or CS\n- Proficiency in React & Node.js\n- Database knowledge (SQL/MongoDB)\n- Strong problem-solving & collaborative attitude");
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
 
-  // Output state
-  const [generatedLetter, setGeneratedLetter] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+  const notify = useCallback((message: string, tone: ToastTone = 'ok') => {
+    setToast({ message, tone });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
 
-  const handleGenerate = () => {
-    const skillsArray = skills
-      .split(/[,|\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+  const applyContent = useCallback((value: string) => {
+    contentRef.current = value;
+    setContent(value);
+  }, []);
 
-    const letter = aiService.generateHumanLetter({
-      letterType,
-      tone,
-      language: language as LanguageCode,
-      company: company.trim(),
-      position: position.trim(),
-      recipient: recipient.trim(),
-      applicantName: applicantName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      location: location.trim(),
-      degree: degree.trim(),
-      university: university.trim(),
-      skills: skillsArray,
-      experienceSummary: experienceSummary.trim(),
-      keyProjects: keyProjects.trim(),
-      jobRequirements: requirements.split("\n").map((r) => r.trim()).filter(Boolean),
+  const pushContent = useCallback((value: string) => {
+    const previous = contentRef.current;
+    if (previous === value) return;
+    setPast((items) => [...items.slice(-29), previous]);
+    setFuture([]);
+    applyContent(value);
+  }, [applyContent]);
+
+  const patchForm = useCallback((patch: Partial<LetterForm>) => {
+    setForm((previous) => ({ ...previous, ...patch }));
+  }, []);
+
+  const persistDrafts = useCallback((next: LetterDraft[]) => {
+    setDrafts(next);
+    saveLetterDrafts(next);
+  }, []);
+
+  const loadDraft = useCallback((draft: LetterDraft) => {
+    setForm({ ...draft.form, requirements: [...draft.form.requirements] });
+    applyContent(draft.content);
+    setTitle(draft.title);
+    setPaper(draft.paper);
+    setFont(draft.font);
+    setAccent(draft.accent);
+    setFontSize(draft.fontSize);
+    setAlign(draft.align);
+    setSource(draft.source);
+    setLanguageRef.current(draft.language);
+    activeIdRef.current = draft.id;
+    setActiveId(draft.id);
+    saveActiveLetterId(draft.id);
+    setSavedAt(draft.updatedAt);
+    setPast([]);
+    setFuture([]);
+    setEditing(false);
+    setZoom(1);
+    setLibraryOpen(false);
+  }, [applyContent]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const stored = loadLetterDrafts();
+      setDrafts(stored);
+      const storedId = loadActiveLetterId();
+      const draft = (storedId && stored.find((item) => item.id === storedId)) || stored[0];
+      if (draft) loadDraft(draft);
+      setHydrated(true);
     });
+    return () => { cancelled = true; };
+  }, [loadDraft]);
 
-    setGeneratedLetter(letter);
-    setCopied(false);
+  // Autosave the active letter locally. No account or network required.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!content.trim() && !meaningfulForm(form)) return;
+
+    const timer = setTimeout(() => {
+      let id = activeIdRef.current;
+      if (!id) {
+        id = createLetterId();
+        activeIdRef.current = id;
+        setActiveId(id);
+        saveActiveLetterId(id);
+      }
+      const updatedAt = new Date().toISOString();
+      const draft: LetterDraft = {
+        id,
+        title: title.trim() || tl.newLetter,
+        form,
+        content,
+        language,
+        paper,
+        font,
+        accent,
+        fontSize,
+        align,
+        source,
+        updatedAt,
+      };
+      setDrafts((previous) => {
+        const next = [draft, ...previous.filter((item) => item.id !== id)].slice(0, 40);
+        saveLetterDrafts(next);
+        return next;
+      });
+      setSavedAt(updatedAt);
+    }, 650);
+
+    return () => clearTimeout(timer);
+  }, [hydrated, content, form, title, language, paper, font, accent, fontSize, align, source, tl.newLetter]);
+
+  const quality = useMemo(() => analyzeLetter(content, form), [content, form]);
+
+  const sourceLabel: Record<LetterSource, string> = {
+    openrouter: tl.sourceOpenRouter,
+    ai: tl.sourceAi,
+    puter: tl.sourcePuter,
+    local: tl.sourceLocal,
   };
 
-  const handleLoadSample = (type: "software" | "marketing") => {
-    if (type === "software") {
-      setApplicantName("Maqaa Kee / Your Name");
-      setEmail("yourname@example.com");
-      setPhone("+251 91 234 5678");
-      setLocation("Addis Ababa, Ethiopia");
-      setCompany("ABC Company");
-      setPosition("Junior Software Engineer");
-      setRecipient("Engineering Hiring Team");
-      setDegree("BSc in Software Engineering");
-      setUniversity("ABC University");
-      setSkills("Java, C++, React.js, Node.js, SQL, MongoDB, Git, REST APIs, Teamwork");
-      setExperienceSummary("IT and Software Engineering Internship at ABC Company");
-      setKeyProjects("Automated University Hiring System (PHP/MySQL) & House Rental Portal (MERN stack)");
-      setRequirements("- Bachelor's degree in Software Engineering\n- Experience in full-stack web technologies\n- Database management (SQL & NoSQL)\n- Collaborative mindset");
-    } else {
-      setApplicantName("Richard Sanchez");
-      setEmail("richard.sanchez@email.com");
-      setPhone("+1 (555) 234-5678");
-      setLocation("Chicago, IL");
-      setCompany("Borcelle Media Group");
-      setPosition("Marketing Manager");
-      setRecipient("Director of Talent Acquisition");
-      setDegree("Bachelor of Business Management");
-      setUniversity("Wardiere University");
-      setSkills("Digital Marketing, Brand Strategy, SEO, Campaign Management, Team Leadership, Analytics");
-      setExperienceSummary("Marketing Lead at Fauget Studio managing multi-channel campaigns with 35% ROI growth");
-      setKeyProjects("National brand relaunch campaign reaching 1.2M impressions");
-      setRequirements("- 3+ years in marketing strategy\n- Experience managing creative and growth teams\n- Proven ROI on multi-channel campaigns");
+  const validationError = useMemo(() => {
+    const name = form.applicantName.trim();
+    if (!name || name.toLowerCase() === 'your name') return true;
+    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) return true;
+    if (!form.company.trim() || !form.position.trim()) return true;
+    return false;
+  }, [form.applicantName, form.email, form.company, form.position]);
+
+  const requestLetter = async (mode: 'generate' | 'rewrite', instruction?: LetterRewrite) => {
+    let written = '';
+    let usedSource: LetterSource = 'local';
+
+    try {
+      const response = await fetch('/api/write-letter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          form,
+          language,
+          content: mode === 'rewrite' ? contentRef.current : undefined,
+          instruction,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { letter?: string; source?: string };
+      if (typeof data.letter === 'string' && data.letter.trim()) {
+        written = data.letter;
+        usedSource = data.source === 'openrouter' ? 'openrouter' : 'ai';
+      }
+    } catch {
+      // Fall through to client-side providers and the offline engine.
     }
+
+    if (!written) {
+      const clientLetter = await writeLetterWithPuterClient({
+        form,
+        language,
+        mode,
+        content: mode === 'rewrite' ? contentRef.current : undefined,
+        instruction,
+      });
+      if (clientLetter) {
+        written = clientLetter;
+        usedSource = 'puter';
+      }
+    }
+
+    if (!written) {
+      written = mode === 'generate'
+        ? composeLetter(form, language)
+        : rewriteLetterLocally(contentRef.current, instruction || 'grammar', form, language);
+      usedSource = 'local';
+    }
+
+    pushContent(written);
+    setSource(usedSource);
+    setEditing(false);
+    notify(sourceLabel[usedSource]);
+  };
+
+  const handleGenerate = async () => {
+    if (validationError) {
+      notify(tl.validationError, 'warn');
+      return;
+    }
+    setBusy('generate');
+    try {
+      await requestLetter('generate');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRewrite = async (instruction: LetterRewrite) => {
+    if (!contentRef.current.trim()) {
+      notify(tl.noContent, 'warn');
+      return;
+    }
+    setBusy('rewrite');
+    try {
+      await requestLetter('rewrite', instruction);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleExtract = async () => {
+    const posting = form.jobPosting.trim();
+    if (posting.length < 20) {
+      notify(tl.noRequirements, 'warn');
+      return;
+    }
+
+    setExtracting(true);
+    let requirements: string[] = [];
+    try {
+      const response = await fetch('/api/write-letter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'requirements', form, language, jobPosting: posting }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { requirements?: string[] };
+      if (Array.isArray(data.requirements)) {
+        requirements = data.requirements.filter(
+          (item): item is string => typeof item === 'string' && Boolean(item.trim()),
+        );
+      }
+    } catch {
+      // The local extractor below keeps this control usable offline.
+    } finally {
+      setExtracting(false);
+    }
+
+    if (!requirements.length) {
+      requirements = extractRequirementsFromPosting(posting);
+    }
+    if (!requirements.length) {
+      notify(tl.noRequirements, 'warn');
+      return;
+    }
+    patchForm({ requirements });
+    notify(tl.jobExtracted);
+  };
+
+  const handleUseProfile = () => {
+    if (!profile) {
+      notify(tl.profileMissing, 'warn');
+      return;
+    }
+    const education = profile.education?.[0];
+    const experience = profile.experience?.[0];
+    const skills = [
+      ...(profile.skills?.technical || []),
+      ...(profile.skills?.soft || []),
+    ].join(', ');
+    const projects = (profile.projects || []).map((project) => project.name).filter(Boolean).join(', ');
+    const experienceText = experience
+      ? [
+          experience.position,
+          experience.company ? `at ${experience.company}` : '',
+          experience.duration ? `(${experience.duration})` : '',
+          (experience.responsibilities || []).slice(0, 2).join('; '),
+        ].filter(Boolean).join(' ')
+      : '';
+
+    patchForm({
+      applicantName: profile.fullName || form.applicantName,
+      email: profile.email || form.email,
+      phone: profile.phone || form.phone,
+      location: profile.location || form.location,
+      linkedin: profile.linkedin || form.linkedin,
+      degree: education?.degree || form.degree,
+      university: education?.university || form.university,
+      skills: skills || form.skills,
+      experience: experienceText || form.experience,
+      projects: projects || form.projects,
+    });
+    notify(tl.useProfile);
+  };
+
+  const handleSample = (sample: 'software' | 'marketing') => {
+    if (sample === 'software') {
+      patchForm({
+        applicantName: 'Alemayehu Tesfaye',
+        email: 'alemayehu.tesfaye@example.com',
+        phone: '+251 91 234 5678',
+        location: 'Addis Ababa, Ethiopia',
+        linkedin: 'linkedin.com/in/yourname',
+        company: 'ABC Technology PLC',
+        position: 'Junior Software Engineer',
+        recipient: 'Engineering Hiring Team',
+        degree: 'BSc in Software Engineering',
+        university: 'ABC University',
+        skills: 'React, Node.js, TypeScript, SQL, Git, Problem Solving',
+        experience: 'software development internship at ABC Technology PLC',
+        projects: 'employee hiring system and a house rental platform',
+        requirements: [
+          'BSc in Computer Science or Software Engineering',
+          'Practical React and Node.js experience',
+          'Database knowledge (SQL or MongoDB)',
+          'Strong problem-solving and teamwork skills',
+        ],
+      });
+    } else {
+      patchForm({
+        applicantName: 'Alemayehu Tesfaye',
+        email: 'alemayehu.tesfaye@example.com',
+        phone: '+251 91 234 5678',
+        location: 'Addis Ababa, Ethiopia',
+        linkedin: 'linkedin.com/in/yourname',
+        company: 'Bikat Business Solutions',
+        position: 'Marketing Associate',
+        recipient: 'Marketing Hiring Committee',
+        degree: 'BA in Marketing',
+        university: 'ABC University',
+        skills: 'Market research, content strategy, SEO, analytics, communication',
+        experience: 'marketing internship with a consumer goods brand',
+        projects: 'a campus brand launch and a social media growth campaign',
+        requirements: [
+          'Degree in marketing, business or a related field',
+          'Strong written and verbal communication',
+          'Familiarity with analytics and social media tools',
+        ],
+      });
+    }
+    notify(tl.sampleProfiles);
   };
 
   const handleCopy = async () => {
-    if (!generatedLetter) return;
+    if (!content.trim()) {
+      notify(tl.noContent, 'warn');
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(generatedLetter);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(content);
     } catch {
-      // fallback
+      const helper = document.createElement('textarea');
+      helper.value = content;
+      helper.style.position = 'fixed';
+      helper.style.opacity = '0';
+      document.body.appendChild(helper);
+      helper.select();
+      document.execCommand('copy');
+      document.body.removeChild(helper);
+    }
+    notify(tl.copySuccess);
+  };
+
+  const exportOptions = { paper, font, accent, fontSize, align, language };
+  const fileBase = `${safeName(form.position || 'Letter')}_${safeName(form.company || 'Application')}`;
+
+  const handleWord = async () => {
+    if (!content.trim()) return notify(tl.noContent, 'warn');
+    try {
+      await exportLetterToWord(content, form.applicantName, form.position, `${fileBase}.docx`, exportOptions);
+      notify(tl.exportSuccess);
+    } catch {
+      notify(tl.validationError, 'warn');
     }
   };
 
-  const handleDownloadDoc = async () => {
-    if (!generatedLetter) return;
-    const filename = `${(applicantName || "Application").replace(/\s+/g, "_")}_Letter.docx`;
-    await exportLetterToWord(generatedLetter, applicantName, position, filename);
+  const handlePdf = () => {
+    if (!content.trim()) return notify(tl.noContent, 'warn');
+    const downloaded = exportLetterToPdf(content, `${fileBase}.pdf`, exportOptions);
+    if (!downloaded) {
+      setEditing(false);
+      setTimeout(() => window.print(), 60);
+      notify(tl.printHint);
+      return;
+    }
+    notify(tl.exportSuccess);
   };
 
-  const handleDownloadTxt = () => {
-    if (!generatedLetter) return;
-    const blob = new Blob([generatedLetter], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(applicantName || "Application").replace(/\s+/g, "_")}_Letter.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleTxt = () => {
+    if (!content.trim()) return notify(tl.noContent, 'warn');
+    downloadText(`${fileBase}.txt`, content);
+    notify(tl.exportSuccess);
   };
 
   const handlePrint = () => {
-    if (!generatedLetter) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${position} - Application Letter</title>
-          <style>
-            @page { size: A4; margin: 25mm 20mm; }
-            body { font-family: 'Georgia', serif; font-size: 11pt; line-height: 1.6; color: #111; margin: 0; padding: 20px; }
-            p { margin-bottom: 14pt; }
-          </style>
-        </head>
-        <body>
-          ${generatedLetter.split("\n\n").map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`).join("")}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 300);
+    if (!content.trim()) return notify(tl.noContent, 'warn');
+    setEditing(false);
+    setTimeout(() => window.print(), 60);
   };
 
-  // Metrics
-  const wordCount = generatedLetter ? generatedLetter.trim().split(/\s+/).length : 0;
-  const readTimeMin = Math.max(1, Math.round(wordCount / 180));
+  const handleEmail = () => {
+    if (!content.trim()) return notify(tl.noContent, 'warn');
+    const subject = encodeURIComponent(`${form.position || 'Application'} — ${form.company || 'Opportunity'}`);
+    const body = encodeURIComponent(content);
+    // Use a temporary anchor so the current page is never replaced by the
+    // mailto: navigation in browsers that handle external protocols strictly.
+    const anchor = document.createElement('a');
+    anchor.href = `mailto:?subject=${subject}&body=${body}`;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
+  const undo = () => {
+    if (!past.length) return;
+    // Capture before applyContent mutates the ref: functional updaters run later.
+    const current = contentRef.current;
+    const previous = past[past.length - 1];
+    setPast((items) => items.slice(0, -1));
+    setFuture((items) => [current, ...items].slice(0, 30));
+    applyContent(previous);
+  };
+
+  const redo = () => {
+    if (!future.length) return;
+    const current = contentRef.current;
+    const next = future[0];
+    setFuture((items) => items.slice(1));
+    setPast((items) => [...items.slice(-29), current]);
+    applyContent(next);
+  };
+
+  const handleFix = (fix: QualityFix) => {
+    if (!contentRef.current.trim()) return;
+    pushContent(fixLetter(contentRef.current, fix, form, language));
+    notify(tl.qualityFix);
+  };
+
+  const resetStudio = () => {
+    activeIdRef.current = null;
+    setActiveId(null);
+    saveActiveLetterId(null);
+    setForm(emptyForm());
+    applyContent('');
+    setTitle(tl.newLetter);
+    setSource('local');
+    setPast([]);
+    setFuture([]);
+    setSavedAt(null);
+    setEditing(false);
+    setLibraryOpen(false);
+    setZoom(1);
+  };
+
+  const duplicateDraft = (draft: LetterDraft) => {
+    const copy: LetterDraft = {
+      ...draft,
+      id: createLetterId(),
+      title: `${draft.title} (copy)`,
+      updatedAt: new Date().toISOString(),
+    };
+    persistDrafts([copy, ...drafts]);
+    notify(tl.duplicateDraft);
+  };
+
+  const renameDraft = (id: string, nextTitle: string) => {
+    persistDrafts(drafts.map((draft) => (
+      draft.id === id ? { ...draft, title: nextTitle, updatedAt: new Date().toISOString() } : draft
+    )));
+    if (id === activeIdRef.current) setTitle(nextTitle);
+    notify(tl.renameDraft);
+  };
+
+  const deleteDraft = (id: string) => {
+    persistDrafts(drafts.filter((draft) => draft.id !== id));
+    if (id === activeIdRef.current) resetStudio();
+    notify(tl.deleteDraft);
+  };
+
+  const exportBackup = () => {
+    downloadText(
+      `letter-studio-backup-${today()}.json`,
+      JSON.stringify({ drafts }, null, 2),
+      'application/json',
+    );
+    notify(tl.exportSuccess);
+  };
+
+  const importBackup = (incoming: LetterDraft[]) => {
+    const normalized = incoming
+      .map((draft) => normalizeLetterDraft(draft))
+      .filter((draft): draft is LetterDraft => Boolean(draft));
+    const known = new Set(normalized.map((draft) => draft.id));
+    persistDrafts([...normalized, ...drafts.filter((draft) => !known.has(draft.id))].slice(0, 40));
+    notify(tl.backupImport);
+  };
+
+  const rewrites: Array<{ id: LetterRewrite; label: string; icon: LucideIcon }> = [
+    { id: 'shorten', label: tl.shorten, icon: Scissors },
+    { id: 'strengthen', label: tl.strengthen, icon: ArrowUp },
+    { id: 'formal', label: tl.moreFormal, icon: ShieldCheck },
+    { id: 'grammar', label: tl.fixGrammar, icon: Check },
+    { id: 'tailor', label: tl.tailor, icon: Target },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-gray-200 dark:border-zinc-800 pb-6">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 mb-2">
-            {tl.badge}
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-zinc-100 tracking-tight">
-            {tl.title}
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600 dark:text-zinc-400 mt-1">
-            {tl.subtitle}
-          </p>
+    <div className="letter-studio">
+      <header className="ls-hero">
+        <div className="ls-hero-text">
+          <span className="ls-badge">{tl.badge}</span>
+          <h1>{tl.title}</h1>
+          <p>{tl.subtitle}</p>
         </div>
-
-        {/* Quick Sample Presets */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400">{tl.sampleProfiles}</span>
-          <button
-            type="button"
-            onClick={() => handleLoadSample("software")}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 hover:border-blue-500 hover:text-blue-600 transition-colors shadow-xs"
-          >
-            {tl.techGrad}
+        <div className="ls-hero-actions">
+          <div className={`ls-hero-score is-${quality.score >= 78 ? 'good' : quality.score >= 50 ? 'mid' : 'bad'}`}>
+            <strong>{quality.score}</strong>
+            <span>{tl.scoreLabel}</span>
+          </div>
+          <button type="button" className="ls-hero-btn" onClick={() => setLibraryOpen(true)}>
+            <Library size={15} strokeWidth={1.8} aria-hidden />
+            {tl.library} <b>{drafts.length}</b>
           </button>
-          <button
-            type="button"
-            onClick={() => handleLoadSample("marketing")}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 hover:border-blue-500 hover:text-blue-600 transition-colors shadow-xs"
-          >
-            {tl.businessPro}
+          <button type="button" className="ls-hero-btn is-primary" onClick={resetStudio}>
+            <Plus size={15} strokeWidth={1.8} aria-hidden />
+            {tl.newLetter}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Main Split Layout: Inputs (Left) vs Document Preview (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* LEFT COLUMN: Controls & Input Form (5 cols) */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Format & Style Selectors */}
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-300">
-              {tl.formatAndTone}
-            </h3>
+      <div className="ls-workspace">
+        <LetterComposer
+          form={form}
+          onChange={patchForm}
+          onUseProfile={handleUseProfile}
+          profileAvailable={Boolean(profile)}
+          onExtract={() => void handleExtract()}
+          onGenerate={() => void handleGenerate()}
+          onSample={handleSample}
+          busy={busy}
+          extracting={extracting}
+        />
 
-            {/* Letter Type */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-zinc-400 mb-1.5">
-                {tl.documentType}
+        <main className="ls-main">
+          <div className="ls-toolbar ls-toolbar--top">
+            <div className="ls-tool-group">
+              <button
+                type="button"
+                className={`ls-mode-btn${!editing ? ' is-active' : ''}`}
+                onClick={() => setEditing(false)}
+              >
+                {tl.preview}
+              </button>
+              <button
+                type="button"
+                className={`ls-mode-btn${editing ? ' is-active' : ''}`}
+                onClick={() => setEditing(true)}
+              >
+                {tl.edit}
+              </button>
+              <span className="ls-tool-sep" />
+              <button type="button" className="ls-icon-btn" onClick={undo} disabled={!past.length} aria-label={tl.undo} title={tl.undo}>
+                <Undo2 size={15} strokeWidth={1.8} aria-hidden />
+              </button>
+              <button type="button" className="ls-icon-btn" onClick={redo} disabled={!future.length} aria-label={tl.redo} title={tl.redo}>
+                <Redo2 size={15} strokeWidth={1.8} aria-hidden />
+              </button>
+            </div>
+
+            <div className="ls-tool-group">
+              <label className="ls-select-wrap">
+                <span>{tl.paperStyle}</span>
+                <select value={paper} onChange={(event) => setPaper(event.target.value as LetterPaper)}>
+                  <option value="classic">{tl.styleClassic}</option>
+                  <option value="modern">{tl.styleModern}</option>
+                  <option value="minimal">{tl.styleMinimal}</option>
+                  <option value="executive">{tl.styleExecutive}</option>
+                </select>
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setLetterType("application")}
-                  className={`px-3 py-2 text-xs font-semibold rounded-lg border text-center transition-all ${letterType === "application"
-                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                    : "bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"
-                    }`}
-                >
-                  {tl.formalApp}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLetterType("cover")}
-                  className={`px-3 py-2 text-xs font-semibold rounded-lg border text-center transition-all ${letterType === "cover"
-                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                    : "bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"
-                    }`}
-                >
-                  {tl.coverLetter}
-                </button>
-              </div>
-            </div>
-
-            {/* Writing Tone */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-zinc-400 mb-1.5">
-                {tl.writingTone}
+              <label className="ls-select-wrap">
+                <span>{tl.fontLabel}</span>
+                <select value={font} onChange={(event) => setFont(event.target.value as LetterFont)}>
+                  <option value="serif">{tl.fontSerif}</option>
+                  <option value="sans">{tl.fontSans}</option>
+                </select>
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "professional" as const, label: tl.toneProfessional },
-                  { id: "fresh-graduate" as const, label: tl.toneFreshGrad },
-                  { id: "modern" as const, label: tl.toneModern },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setTone(item.id)}
-                    className={`p-2 rounded-lg border text-center transition-all ${tone === item.id
-                      ? "bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 font-bold"
-                      : "bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-100"
-                      }`}
-                  >
-                    <span className="text-xs block">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Language */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-zinc-400 mb-1.5">
-                Language
+              <label className="ls-select-wrap">
+                <span>{tl.fontSize}</span>
+                <input type="range" min={9} max={14} step={1} value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} />
               </label>
-              <div className="flex gap-2">
-                {[
-                  { id: "en" as const, label: "English" },
-                  { id: "om" as const, label: "Afaan Oromoo" },
-                  { id: "am" as const, label: "አማርኛ (Amharic)" },
-                ].map((lang) => (
-                  <button
-                    key={lang.id}
-                    type="button"
-                    onClick={() => setLanguage(lang.id)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${language === lang.id
-                      ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100 shadow-xs"
-                      : "bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-100"
-                      }`}
-                  >
-                    {lang.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Candidate & Target Information Form */}
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-300">
-              {tl.candidateInfo}
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.applicantName} *
-                </label>
-                <input
-                  type="text"
-                  value={applicantName}
-                  onChange={(e) => setApplicantName(e.target.value)}
-                  placeholder="e.g. Maqaa Kee/Your Name"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.email} *
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. name@email.com"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.phone}
-                </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. +251 912 345 678"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.location}
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Addis Ababa, Ethiopia"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-100 dark:border-zinc-800">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.company} *
-                </label>
-                <input
-                  type="text"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="e.g. ABC Technology PLC"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.position} *
-                </label>
-                <input
-                  type="text"
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value)}
-                  placeholder="e.g. Junior Software Developer"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                {tl.recipient}
+              <label className="ls-select-wrap">
+                <span>{tl.zoom}</span>
+                <input type="range" min={0.55} max={1.2} step={0.05} value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
               </label>
-              <input
-                type="text"
-                value={recipient}
-                onChange={(e) => setRecipient(e.target.value)}
-                placeholder="e.g. Hiring Committee, Mr. Abebe Bekele"
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Qualifications & Experience Form */}
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-300">
-              {tl.qualifications}
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  {tl.degreeUni}
-                </label>
-                <input
-                  type="text"
-                  value={degree}
-                  onChange={(e) => setDegree(e.target.value)}
-                  placeholder="e.g. BSc in Software Engineering"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                  University / College
-                </label>
-                <input
-                  type="text"
-                  value={university}
-                  onChange={(e) => setUniversity(e.target.value)}
-                  placeholder="e.g. ABC University"
-                  className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                {tl.skills}
-              </label>
-              <input
-                type="text"
-                value={skills}
-                onChange={(e) => setSkills(e.target.value)}
-                placeholder="e.g. React, Node.js, SQL, TypeScript, Git, Problem Solving"
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                {tl.experience}
-              </label>
-              <input
-                type="text"
-                value={experienceSummary}
-                onChange={(e) => setExperienceSummary(e.target.value)}
-                placeholder="e.g. Software Development Intern at ABC Company"
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                {tl.projects}
-              </label>
-              <input
-                type="text"
-                value={keyProjects}
-                onChange={(e) => setKeyProjects(e.target.value)}
-                placeholder="e.g. Employee Hiring System for ABC University"
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-                {tl.jobRequirements}
-              </label>
-              <textarea
-                rows={3}
-                value={requirements}
-                onChange={(e) => setRequirements(e.target.value)}
-                placeholder={tl.requirementsPlaceholder}
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Big Action Button */}
-          <button
-            type="button"
-            onClick={handleGenerate}
-            className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm shadow-md transition-all hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <span>{tl.generateBtn}</span>
-          </button>
-        </div>
-
-        {/* RIGHT COLUMN: Live Document Editor & Preview (7 cols, sticky) */}
-        <div className="lg:col-span-7 sticky top-20 space-y-4">
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[700px]">
-            {/* Action Bar */}
-            <div className="px-5 py-3.5 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-800/40 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-300 flex items-center gap-1.5">
-                  <span>📄</span>
-                  <span>{tl.outputTitle}</span>
-                </span>
-                {generatedLetter && (
-                  <span className="text-[11px] font-mono text-gray-500 dark:text-zinc-400 bg-gray-200/60 dark:bg-zinc-700/60 px-2 py-0.5 rounded">
-                    {wordCount} {tl.wordCount} · {readTimeMin} {tl.readTime}
-                  </span>
-                )}
-              </div>
-
-              {generatedLetter && (
-                <div className="flex flex-wrap items-center gap-1.5">
+              <div className="ls-accents" aria-label={tl.paperStyle}>
+                {['#0c3b74', '#176b5c', '#8a3d2e', '#4b3b8f'].map((color) => (
                   <button
                     type="button"
-                    onClick={handleCopy}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 transition-colors shadow-2xs"
-                  >
-                    {copied ? tl.copied : tl.copy}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadDoc}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 transition-colors shadow-2xs"
-                  >
-                    {tl.wordDoc}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 transition-colors shadow-2xs"
-                  >
-                    {tl.printPdf}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadTxt}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 transition-colors shadow-2xs"
-                  >
-                    {tl.txtFile}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Letter Paper Body */}
-            <div className="p-6 sm:p-8 flex-1 flex flex-col bg-white dark:bg-zinc-900">
-              {generatedLetter ? (
-                <div className="space-y-4 flex-1 flex flex-col">
-                  <div className="text-[11px] text-gray-400 dark:text-zinc-500 italic">
-                    💡 Click anywhere inside to make direct personalized adjustments:
-                  </div>
-                  <textarea
-                    rows={26}
-                    value={generatedLetter}
-                    onChange={(e) => setGeneratedLetter(e.target.value)}
-                    className="w-full flex-1 p-4 text-sm sm:text-[15px] leading-relaxed font-serif text-gray-900 dark:text-zinc-100 bg-gray-50/40 dark:bg-zinc-800/30 border border-gray-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-y"
-                    style={{ minHeight: "520px" }}
+                    key={color}
+                    className={`ls-accent${accent === color ? ' is-active' : ''}`}
+                    style={{ background: color }}
+                    onClick={() => setAccent(color)}
+                    aria-label={color}
                   />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="ls-stage">
+            <div className="ls-paper-column">
+              <LetterPaperView
+                content={content}
+                editing={editing}
+                onChange={pushContent}
+                paper={paper}
+                font={font}
+                accent={accent}
+                fontSize={fontSize}
+                align={align}
+                zoom={zoom}
+                language={language}
+                emptyLabel={tl.noContent}
+              />
+            </div>
+
+            <aside className="ls-insight-column">
+              <section className="ls-refine">
+                <h3>{tl.rewriteLabel}</h3>
+                <div className="ls-refine-grid">
+                  {rewrites.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      disabled={!content.trim() || busy === 'rewrite'}
+                      onClick={() => void handleRewrite(item.id)}
+                    >
+                      <item.icon size={14} strokeWidth={1.8} aria-hidden />
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-gray-200 dark:border-zinc-800 rounded-xl">
-                  <span className="text-4xl mb-3">✍️</span>
-                  <h4 className="text-base font-bold text-gray-800 dark:text-zinc-200 mb-1">
-                    {tl.outputTitle}
-                  </h4>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-zinc-400 max-w-sm mb-5">
-                    {tl.emptyHint}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleGenerate}
-                    className="px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold text-xs hover:bg-blue-100 transition-colors cursor-pointer"
-                  >
-                    {tl.generateBtn} →
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="ls-regenerate"
+                  disabled={validationError || busy === 'generate'}
+                  onClick={() => void handleGenerate()}
+                >
+                  <Sparkles size={14} strokeWidth={1.8} aria-hidden />
+                  {busy === 'generate' ? tl.generatingBtn : tl.regenerate}
+                </button>
+              </section>
+
+              <LetterQualityPanel quality={quality} onFix={handleFix} />
+            </aside>
+          </div>
+
+          <div className="ls-toolbar ls-toolbar--bottom">
+            <div className="ls-export-group">
+              <button type="button" className="ls-export-btn is-primary" onClick={() => void handleCopy()}>
+                <Copy size={14} strokeWidth={1.8} aria-hidden />
+                {tl.copy}
+              </button>
+              <button type="button" className="ls-export-btn" onClick={() => void handleWord()}>
+                <FileType2 size={14} strokeWidth={1.8} aria-hidden />
+                {tl.wordDoc}
+              </button>
+              <button type="button" className="ls-export-btn" onClick={handlePdf}>
+                <FileDown size={14} strokeWidth={1.8} aria-hidden />
+                {tl.printPdf}
+              </button>
+              <button type="button" className="ls-export-btn" onClick={handleTxt}>
+                <FileText size={14} strokeWidth={1.8} aria-hidden />
+                {tl.txtFile}
+              </button>
+              <button type="button" className="ls-export-btn" onClick={handlePrint} aria-label={tl.print} title={tl.print}>
+                <Printer size={15} strokeWidth={1.8} aria-hidden />
+              </button>
+              <button type="button" className="ls-export-btn" onClick={handleEmail}>
+                <Mail size={14} strokeWidth={1.8} aria-hidden />
+                {tl.emailLetter}
+              </button>
+            </div>
+            <div className="ls-status">
+              <span>{sourceLabel[source]}</span>
+              <span>·</span>
+              <span>{quality.wordCount} {tl.wordCount}</span>
+              <span>·</span>
+              <span>{quality.readingMinutes} {tl.readTime}</span>
+              {savedAt && (
+                <>
+                  <span>·</span>
+                  <span>{tl.savedAt} {new Date(savedAt).toLocaleTimeString()}</span>
+                </>
               )}
             </div>
           </div>
-        </div>
+        </main>
       </div>
+
+      <LetterLibrary
+        drafts={drafts}
+        activeId={activeId}
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onOpenDraft={loadDraft}
+        onNew={resetStudio}
+        onDuplicate={duplicateDraft}
+        onRename={renameDraft}
+        onDelete={deleteDraft}
+        onExport={exportBackup}
+        onImport={importBackup}
+        onImportError={() => notify(tl.backupInvalid, 'warn')}
+      />
+
+      {toast && <div className={`ls-toast is-${toast.tone}`} role="status">{toast.message}</div>}
     </div>
   );
 }
-

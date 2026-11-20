@@ -1183,7 +1183,7 @@ export const STATIC_TEMPLATES: StaticTemplateDefinition[] = [
       ],
     },
   },
-  // 7. ACADEMIC GRADUATE (Two-Column Maqaa Kee/Your Name format)
+  // 7. ACADEMIC GRADUATE (Two-Column Your Name format)
   {
     id: 'academic-graduate',
     name: 'Academic Graduate (Two-Column)',
@@ -1318,7 +1318,7 @@ export const STATIC_TEMPLATES: StaticTemplateDefinition[] = [
       ],
     },
     defaultSingleton: {
-      fullName: 'Your Name / Maqaa Kee',
+      fullName: 'Your Name',
       field: 'Software Engineering',
       phone: '+251912345678',
       email: 'yourname@example.com',

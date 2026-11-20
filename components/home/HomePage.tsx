@@ -177,49 +177,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="home-section pt-0">
-        <div className="home-wrap">
-          <div className="home-section-head">
-            <h2 className="home-h2 mt-3 text-[clamp(28px,4vw,44px)]">{h.archTitle}</h2>
-            <p className="home-lead mt-3 text-[16px]">{h.archSubtitle}</p>
-          </div>
-
-          <div className="arch-card">
-            <div className="arch-title">{h.archCardTitle}</div>
-            <div className="arch-stack">
-              <div className="arch-node arch-frontend">
-                <IconMonitor />
-                <h3>{h.archFrontend}</h3>
-                <p>{h.archFrontendDesc}</p>
-              </div>
-              <div className="arch-flow" aria-hidden>
-                ↕
-              </div>
-              <div className="arch-mid">
-                <div className="arch-node arch-local">
-                  <IconDatabase />
-                  <h3>{h.archLocal}</h3>
-                  <p>{h.archLocalDesc}</p>
-                </div>
-                <div className="arch-node arch-cloud">
-                  <IconCloud />
-                  <h3>{h.archCloud}</h3>
-                  <p>{h.archCloudDesc}</p>
-                </div>
-              </div>
-              <div className="arch-flow" aria-hidden>
-                ↓
-              </div>
-              <div className="arch-node arch-docs">
-                <IconPdf />
-                <h3>{h.archDocs}</h3>
-                <p>{h.archDocsDesc}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="home-section">
         <div className="home-wrap">
           <div className="home-section-head">

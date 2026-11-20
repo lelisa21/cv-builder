@@ -16,6 +16,9 @@ declare global {
       ai?: {
         chat: (prompt: string | Array<Record<string, unknown>>, options?: Record<string, unknown>) => Promise<any>;
       };
+      auth?: {
+        isSignedIn?: () => Promise<boolean> | boolean;
+      };
     };
   }
 }
@@ -27,6 +30,9 @@ import {
   buildWritePrompt,
   sanitizeWriteResult,
 } from '@/lib/template-analysis';
+import { buildLetterPrompt, sanitizeLetterResult } from '@/lib/letter-prompts';
+import type { LetterForm, LetterRewrite } from '@/types/letters';
+import type { LanguageCode } from '@/types';
 
 /**
  * Executes an AI chat prompt via Puter.js in Browser or Node.js environment
@@ -210,6 +216,66 @@ export async function analyzeJobWithPuterClient(
   } catch (err) {
     console.warn('[analyzeJobWithPuterClient]', err);
     return null;
+  }
+}
+
+/**
+ * Client-side letter generation/rewriting through the Puter.js bridge.
+ * Used when the server has no AI key or its provider is rate limited.
+ */
+export async function writeLetterWithPuterClient(params: {
+  form: LetterForm;
+  language: LanguageCode;
+  mode: 'generate' | 'rewrite';
+  content?: string;
+  instruction?: LetterRewrite;
+}): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  const puter = window.puter;
+  const puterAi = puter?.ai;
+  const chat = puterAi?.chat;
+  if (!puter || !puterAi || !chat) return null;
+
+  // Never trigger Puter's interactive sign-in popup during letter generation.
+  if (puter.auth?.isSignedIn) {
+    let authTimer: ReturnType<typeof setTimeout> | undefined;
+    const signedIn = await Promise.race([
+      Promise.resolve(puter.auth.isSignedIn()),
+      new Promise<boolean>((resolve) => {
+        authTimer = setTimeout(() => resolve(false), 1200);
+      }),
+    ]).catch(() => false);
+    if (authTimer) clearTimeout(authTimer);
+    if (!signedIn) return null;
+  }
+
+  const prompt = buildLetterPrompt(params);
+  const request = (async () => {
+    const res = await chat.call(puterAi, prompt, {
+      model: 'gpt-4o-mini',
+      temperature: 0.6,
+    });
+    const rawText =
+      typeof res === 'string'
+        ? res
+        : res?.message?.content || res?.text || JSON.stringify(res);
+    return sanitizeLetterResult(rawText) || null;
+  })();
+  request.catch(() => null);
+
+  // Puter can wait indefinitely for an interactive sign-in. Keep the studio usable.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), 9000);
+  });
+
+  try {
+    return await Promise.race([request, timeout]);
+  } catch (err) {
+    console.warn('[writeLetterWithPuterClient]', err);
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

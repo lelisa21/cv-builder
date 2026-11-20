@@ -35,7 +35,7 @@ export default function JobAnalyzer() {
     "- Bachelor's degree in Software Engineering, Computer Science or related field\n- Proven proficiency in React.js and Node.js\n- Hands-on experience with SQL databases (MySQL/PostgreSQL) and MongoDB\n- Familiarity with Git version control and RESTful APIs\n- Strong problem-solving, collaboration, and verbal communication skills"
   );
   const [profileInput, setProfileInput] = useState(
-    "Your Name / Maqaa Kee - BSc in Software Engineering from ABC University (CGPA 4, Exit Exam 99%).\nSkills: Java, C++, React.js, Node.js, SQL, MongoDB, Git, HTML, CSS, JavaScript, Problem Solving, Teamwork.\nExperience: 2 years IT Expert & Software Development Intern at ABC Company.\nProjects: Employee Hiring System (PHP/MySQL) and House Rental Portal (MERN stack)."
+    "Your Name - BSc in Software Engineering from ABC University (CGPA 4, Exit Exam 99%).\nSkills: Java, C++, React.js, Node.js, SQL, MongoDB, Git, HTML, CSS, JavaScript, Problem Solving, Teamwork.\nExperience: 2 years IT Expert & Software Development Intern at ABC Company.\nProjects: Employee Hiring System (PHP/MySQL) and House Rental Portal (MERN stack)."
   );
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -126,7 +126,7 @@ export default function JobAnalyzer() {
         "- Bachelor's degree in Software Engineering or Computer Science\n- Solid foundation in JavaScript/TypeScript, React.js and Node.js\n- Experience designing and querying SQL and MongoDB databases\n- Familiarity with RESTful APIs, Git, and cloud concepts\n- Adaptable problem solver with good communication"
       );
       setProfileInput(
-        "Your Name / Maqaa Kee\nSoftware Engineer Graduate (CGPA: 4) from ABC University.\nSkills: JavaScript, TypeScript, React.js, Node.js, Express, SQL, MySQL, MongoDB, Git, HTML, CSS, Problem Solving, Teamwork.\nExperience: 2 years IT Support & Software Intern at ABC Company.\nProjects: Automated University Hiring System (PHP/MySQL) and Student Housing Platform (MERN stack)."
+        "Your Name / Software Engineer Graduate (CGPA: 4) from ABC University.\nSkills: JavaScript, TypeScript, React.js, Node.js, Express, SQL, MySQL, MongoDB, Git, HTML, CSS, Problem Solving, Teamwork.\nExperience: 2 years IT Support & Software Intern at ABC Company.\nProjects: Automated University Hiring System (PHP/MySQL) and Student Housing Platform (MERN stack)."
       );
     } else if (sample === 'marketing') {
       setPosition('Marketing Manager');
@@ -144,7 +144,7 @@ export default function JobAnalyzer() {
         "- Bachelor's or Master's degree in Accounting, Finance, or Auditing (CPA/ACCA preferred)\n- 4+ years direct experience in general ledger reconciliation, GAAP compliance, and financial reporting\n- Hands-on mastery of QuickBooks, SAP ERP Financials, and advanced financial modeling in Excel\n- Strong track record managing quarterly corporate tax audits and cash flow forecasting\n- High ethical standards and executive presentation ability"
       );
       setProfileInput(
-        "Your Name / Maqaa Kee\nAddis Ababa, Ethiopia | BSc in Computer Science & Software Engineering (CGPA: 3.9).\nSkills: Java, Python, React.js, Node.js, SQL Databases, Git, Problem Solving, System Architecture, Algorithms, Data Structures.\nExperience: 4 years as Full-Stack Software Developer building SaaS platforms and cloud backend APIs.\nProjects: University Management Portal (PostgreSQL/React) and Real-time Logistics Tracker."
+        "Your Name \nAddis Ababa, Ethiopia | BSc in Computer Science & Software Engineering (CGPA: 3.9).\nSkills: Java, Python, React.js, Node.js, SQL Databases, Git, Problem Solving, System Architecture, Algorithms, Data Structures.\nExperience: 4 years as Full-Stack Software Developer building SaaS platforms and cloud backend APIs.\nProjects: University Management Portal (PostgreSQL/React) and Real-time Logistics Tracker."
       );
     }
   };

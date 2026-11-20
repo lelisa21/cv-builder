@@ -1,11 +1,17 @@
+export type AiProvider = 'openrouter' | 'openai' | 'gemini' | 'puter';
+
+/** Sentinel model id: the adapter discovers a working free OpenRouter model at request time. */
+export const OPENROUTER_AUTO_MODEL = 'auto:free';
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
 export interface AiConfig {
-  provider: 'openai' | 'gemini' | 'puter';
+  provider: AiProvider;
   key: string;
   model: string;
   baseUrl: string;
   configured: boolean;
   secondaryProviders?: Array<{
-    provider: 'openai' | 'gemini' | 'puter';
+    provider: AiProvider;
     key: string;
     model: string;
     baseUrl: string;
@@ -13,45 +19,95 @@ export interface AiConfig {
 }
 
 export function getAiConfig(): AiConfig {
-  const wantsGemini =
-    (process.env.AI_PROVIDER || '').toLowerCase().startsWith('gemini') ||
-    (Boolean(process.env.GEMINI_API_KEY) && !process.env.OPENAI_API_KEY);
-  const wantsPuter = (process.env.AI_PROVIDER || '').toLowerCase().startsWith('puter');
-  
-  const provider: 'openai' | 'gemini' | 'puter' = wantsPuter ? 'puter' : wantsGemini ? 'gemini' : 'openai';
+  const requested = (process.env.AI_PROVIDER || '').toLowerCase();
 
-  const openaiKey = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY;
-  const puterKey = process.env.PUTER_AUTH_TOKEN || process.env.PUTER_API_KEY;
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
+  // The project's .env exposes the OpenRouter key as VITE_OPEN_ROUTER_KEY.
+  // Next reads it server-side from process.env; it is never sent to the browser.
+  const openrouterKey =
+    process.env.VITE_OPEN_ROUTER_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.AI_API_KEY ||
+    '';
+  const openaiKey = process.env.OPENAI_API_KEY || '';
+  const geminiKey = process.env.GEMINI_API_KEY || '';
+  const puterKey = process.env.PUTER_AUTH_TOKEN || process.env.PUTER_API_KEY || '';
 
-  const key = provider === 'gemini' ? geminiKey : provider === 'puter' ? puterKey : openaiKey;
+  const explicitProvider = (
+    ['openrouter', 'gemini', 'puter', 'openai'] as const
+  ).find((name) => requested.startsWith(name));
+
+  // OpenRouter is the default whenever its key exists. Explicit AI_PROVIDER
+  // settings or dedicated keys still take precedence for existing deployments.
+  const provider: AiProvider =
+    explicitProvider ||
+    (openrouterKey ? 'openrouter' : geminiKey && !openaiKey ? 'gemini' : openaiKey ? 'openai' : 'puter');
+
+  const key =
+    provider === 'openrouter'
+      ? openrouterKey
+      : provider === 'gemini'
+        ? geminiKey
+        : provider === 'puter'
+          ? puterKey
+          : openaiKey;
+
+  const baseUrl =
+    provider === 'openrouter'
+      ? OPENROUTER_BASE_URL
+      : process.env.OPENAI_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
 
   const model =
-    provider === 'gemini'
-      ? process.env.AI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
-      : provider === 'puter'
-        ? process.env.AI_MODEL || 'gpt-4o-mini'
-        : process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-  const baseUrl = process.env.OPENAI_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
+    provider === 'openrouter'
+      ? process.env.OPENROUTER_MODEL || OPENROUTER_AUTO_MODEL
+      : provider === 'gemini'
+        ? process.env.AI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+        : provider === 'puter'
+          ? process.env.AI_MODEL || 'gpt-4o-mini'
+          : process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
   const secondaryProviders: AiConfig['secondaryProviders'] = [];
 
-  // If Gemini is primary, add OpenAI/OpenRouter/Groq/Puter as fallbacks if keys exist
-  if (provider === 'gemini') {
+  if (provider === 'openrouter') {
+    if (geminiKey) {
+      secondaryProviders.push({
+        provider: 'gemini',
+        key: geminiKey,
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      });
+    }
     if (openaiKey) {
-      secondaryProviders.push({ provider: 'openai', key: openaiKey, model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' });
+      secondaryProviders.push({
+        provider: 'openai',
+        key: openaiKey,
+        model: 'gpt-4o-mini',
+        baseUrl: 'https://api.openai.com/v1',
+      });
     }
+  } else {
     if (openrouterKey) {
-      secondaryProviders.push({ provider: 'openai', key: openrouterKey, model: 'meta-llama/llama-3.1-70b-instruct', baseUrl: 'https://openrouter.ai/api/v1' });
+      secondaryProviders.push({
+        provider: 'openrouter',
+        key: openrouterKey,
+        model: OPENROUTER_AUTO_MODEL,
+        baseUrl: OPENROUTER_BASE_URL,
+      });
     }
-    if (groqKey) {
-      secondaryProviders.push({ provider: 'openai', key: groqKey, model: 'llama-3.3-70b-versatile', baseUrl: 'https://api.groq.com/openai/v1' });
+    if (provider === 'gemini' && openaiKey) {
+      secondaryProviders.push({
+        provider: 'openai',
+        key: openaiKey,
+        model: 'gpt-4o-mini',
+        baseUrl: 'https://api.openai.com/v1',
+      });
     }
-    if (puterKey) {
-      secondaryProviders.push({ provider: 'puter', key: puterKey, model: 'gpt-4o-mini', baseUrl: 'https://api.puter.com/drivers/ai/chat' });
+    if (provider !== 'puter' && puterKey) {
+      secondaryProviders.push({
+        provider: 'puter',
+        key: puterKey,
+        model: 'gpt-4o-mini',
+        baseUrl: 'https://api.puter.com/drivers/ai/chat',
+      });
     }
   }
 
@@ -60,7 +116,7 @@ export function getAiConfig(): AiConfig {
     key: key || '',
     model,
     baseUrl: baseUrl.replace(/\/$/, ''),
-    configured: Boolean(key || puterKey || openaiKey || geminiKey || openrouterKey || groqKey),
+    configured: Boolean(key),
     secondaryProviders,
   };
 }
